@@ -1,0 +1,88 @@
+version: '3'
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Build the fireconf binary
+    cmds:
+      - go build -o fireconf main.go
+
+  test:
+    desc: Run all tests
+    cmds:
+      - go test -v ./...
+
+  test:cover:
+    desc: Run tests with coverage
+    cmds:
+      - go test -cover -coverprofile=coverage.out ./...
+      - go tool cover -html=coverage.out -o coverage.html
+
+  generate:
+    desc: Generate all code (including mocks)
+    cmds:
+      - go generate ./...
+
+  mock:
+    desc: Generate mock for FirestoreClient interface
+    cmds:
+      - mkdir -p pkg/domain/interfaces/mock
+      - moq -out pkg/domain/interfaces/mock/firestore_mock.go -pkg mock pkg/domain/interfaces FirestoreClient
+
+  fmt:
+    desc: Format all Go files
+    cmds:
+      - go fmt ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - go vet ./...
+
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - golangci-lint run ./...
+
+  sec:
+    desc: Run security scan
+    cmds:
+      - gosec -quiet ./...
+
+  check:
+    desc: Run all checks (fmt, vet, lint, sec)
+    deps:
+      - fmt
+      - vet
+    cmds:
+      - task: lint
+      - task: sec
+
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -f fireconf
+      - rm -f coverage.out coverage.html
+      - rm -rf ./tmp/*
+
+  run:sync:
+    desc: Run sync command with example config
+    cmds:
+      - go run main.go sync --project={{.PROJECT}} --database={{.DATABASE}} --config={{.CONFIG}}
+    vars:
+      PROJECT: '{{default "my-project" .PROJECT}}'
+      DATABASE: '{{default "(default)" .DATABASE}}'
+      CONFIG: '{{default "fireconf.yaml" .CONFIG}}'
+
+  run:import:
+    desc: Run import command
+    cmds:
+      - go run main.go import --project={{.PROJECT}} --database={{.DATABASE}} {{.COLLECTIONS}}
+    vars:
+      PROJECT: '{{default "my-project" .PROJECT}}'
+      DATABASE: '{{default "(default)" .DATABASE}}'
+      COLLECTIONS: '{{default "" .COLLECTIONS}}'

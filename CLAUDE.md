@@ -4,18 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`fireconf` is a Firestore configuration tool written in Go. The project is currently in its initial development stage.
+`fireconf` is a Firestore index and TTL configuration management tool. It allows you to manage Firestore composite indexes and TTL policies as code using YAML configuration files.
 
 ## Development Commands
 
 ### Build
 ```bash
 go build -o fireconf main.go
+# or using Task
+task build
 ```
 
 ### Run
 ```bash
-go run main.go
+go run main.go sync --project YOUR_PROJECT --config fireconf.yaml
+go run main.go import --project YOUR_PROJECT users posts
+
+# or using Task
+task run:sync PROJECT=my-project CONFIG=fireconf.yaml
+task run:import PROJECT=my-project COLLECTIONS="users posts"
 ```
 
 ### Module Management
@@ -29,12 +36,29 @@ go mod download  # Download modules to local cache
 go test ./...  # Run all tests
 go test -v ./...  # Run all tests with verbose output
 go test -cover ./...  # Run tests with coverage
+
+# or using Task
+task test
+task test:cover
 ```
 
-### Linting
+### Linting and Checks
 ```bash
 go fmt ./...  # Format all Go files
 go vet ./...  # Run Go vet on all packages
+golangci-lint run ./...  # Run golangci-lint
+gosec -quiet ./...  # Run security scan
+
+# or using Task
+task check  # Run all checks
+```
+
+### Mock Generation
+```bash
+go generate ./...  # Generate all mocks
+# or
+task generate
+task mock  # Generate FirestoreClient mock specifically
 ```
 
 ## 3rd Party Library and Tool
@@ -45,6 +69,8 @@ go vet ./...  # Run Go vet on all packages
 - Logger handling/propagation: github.com/m-mizutani/ctxlog
 - Test framework: github.com/m-mizutani/gt
 - CLI framework: github.com/urfave/cli/v3
+- Mock generation tool: github.com/matryer/moq
+- Task runner: https://github.com/go-task/task
 
 ## Restriction & Rule
 
@@ -127,12 +153,22 @@ The project follows a clean architecture pattern with:
 
 ## Architecture Notes
 
-As a Firestore configuration tool, this project will likely need to:
-- Connect to Google Cloud Firestore
-- Manage Firestore configurations (collections, documents, security rules)
-- Handle authentication with Google Cloud Platform
+The project follows clean architecture principles:
 
-When implementing features, consider:
-- Using the official Firebase Admin SDK for Go or Cloud Firestore client library
-- Implementing proper error handling for network and API operations
-- Following Go best practices for CLI tools (consider using cobra/viper for complex CLIs)
+### Package Structure
+- `pkg/domain/model`: Domain models for configuration (YAML)
+- `pkg/domain/interfaces`: Interfaces for Firestore operations
+- `pkg/adapter/firestore`: Firestore Admin API implementation
+- `pkg/usecase`: Business logic for sync and import operations
+- `pkg/cli`: CLI command implementations using urfave/cli/v3
+
+### Key Design Decisions
+1. **Firestore Admin API**: Uses `cloud.google.com/go/firestore/apiv1/admin` instead of regular Firestore SDK for index/TTL management
+2. **Idempotent Operations**: All operations are designed to be safely run multiple times
+3. **TTL Field Indexing**: Automatically disables single-field indexes on TTL fields to prevent hotspots
+4. **Error Handling**: Uses `github.com/m-mizutani/goerr/v2` for structured error handling with context
+
+### Authentication
+- Supports Application Default Credentials (ADC)
+- Can use service account key files via environment variable
+- Requires specific IAM permissions for datastore index and operation management
