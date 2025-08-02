@@ -1,0 +1,2 @@
+# fireconf
+Firestore configuration tool
