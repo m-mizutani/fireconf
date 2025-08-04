@@ -98,7 +98,7 @@ func (i *Import) importIndexes(ctx context.Context, collectionName string) ([]mo
 			continue
 		}
 
-		modelIndex := ConvertFirestoreToModelIndex(idx)
+		modelIndex := convertFirestoreToModelIndex(idx)
 
 		// Adjust field order to comply with Firestore constraints
 		modelIndex = adjustFieldOrder(modelIndex)
@@ -231,7 +231,7 @@ func adjustFieldOrder(index model.Index) model.Index {
 	// For non-vector indexes: regular fields, __name__ (last)
 	var newFields []model.IndexField
 	newFields = append(newFields, regularFields...)
-	
+
 	if len(vectorFields) > 0 {
 		// Vector index: __name__ before vector fields
 		if nameField != nil {
@@ -250,3 +250,4 @@ func adjustFieldOrder(index model.Index) model.Index {
 		QueryScope: index.QueryScope,
 	}
 }
+

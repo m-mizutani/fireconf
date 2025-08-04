@@ -42,7 +42,7 @@ func (c *Client) CreateCollection(ctx context.Context, collectionID string) erro
 
 	// Add a temporary document
 	_, err := tempDocRef.Set(ctx, map[string]interface{}{
-		"__temp": true,
+		"__temp":       true,
 		"__created_by": "fireconf",
 	})
 	if err != nil {
@@ -55,22 +55,6 @@ func (c *Client) CreateCollection(ctx context.Context, collectionID string) erro
 		// Log warning but don't fail - the collection is created
 		// The temporary document will remain but that's acceptable
 		return nil
-	}
-
-	return nil
-}
-
-// ensureCollectionExists checks if a collection exists and creates it if it doesn't
-func (c *Client) ensureCollectionExists(ctx context.Context, collectionID string) error {
-	exists, err := c.CollectionExists(ctx, collectionID)
-	if err != nil {
-		return fmt.Errorf("failed to check if collection exists: %w", err)
-	}
-
-	if !exists {
-		if err := c.CreateCollection(ctx, collectionID); err != nil {
-			return fmt.Errorf("failed to create collection: %w", err)
-		}
 	}
 
 	return nil

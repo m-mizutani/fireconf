@@ -18,7 +18,7 @@ task build
 ### Run
 ```bash
 go run main.go sync --project YOUR_PROJECT --config fireconf.yaml
-go run main.go import --project YOUR_PROJECT users posts
+go run main.go import --project YOUR_PROJECT --collections users --collections posts
 
 # or using Task
 task run:sync PROJECT=my-project CONFIG=fireconf.yaml

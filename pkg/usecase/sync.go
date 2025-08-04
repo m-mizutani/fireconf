@@ -364,3 +364,4 @@ func (s *Sync) ensureCollectionExists(ctx context.Context, collectionName string
 
 	return nil
 }
+

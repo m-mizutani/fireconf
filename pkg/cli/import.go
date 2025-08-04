@@ -14,15 +14,19 @@ import (
 
 func newImportCommand() *cli.Command {
 	return &cli.Command{
-		Name:      "import",
-		Usage:     "Import existing Firestore configuration to YAML (imports all collections if none specified)",
-		ArgsUsage: "[collection1] [collection2] ...]",
+		Name:  "import",
+		Usage: "Import existing Firestore configuration to YAML",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:    "output",
 				Aliases: []string{"o"},
 				Usage:   "Output file path (use - for stdout)",
 				Value:   "-",
+			},
+			&cli.StringSliceFlag{
+				Name:    "collections",
+				Aliases: []string{"c"},
+				Usage:   "Collections to import (can be specified multiple times, imports all if not specified)",
 			},
 		},
 		Action: runImport,
@@ -54,8 +58,8 @@ func runImport(ctx context.Context, c *cli.Command) error {
 		defer closer.Close()
 	}
 
-	// Get collection names from arguments or discover all collections
-	collections := c.Args().Slice()
+	// Get collection names from flag or discover all collections
+	collections := c.StringSlice("collections")
 	if len(collections) == 0 {
 		logger.Info("No collections specified, discovering all collections...")
 		discoveredCollections, err := client.ListCollections(ctx)

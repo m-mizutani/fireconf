@@ -46,13 +46,16 @@ Export existing Firestore configuration to YAML:
 fireconf import --project YOUR_PROJECT_ID > fireconf.yaml
 
 # Import specific collections
-fireconf import --project YOUR_PROJECT_ID users posts comments > fireconf.yaml
+fireconf import --project YOUR_PROJECT_ID --collections users --collections posts --collections comments > fireconf.yaml
+
+# Or use the short form
+fireconf import --project YOUR_PROJECT_ID -c users -c posts -c comments > fireconf.yaml
 
 # Export to a specific file
-fireconf import --project YOUR_PROJECT_ID --output fireconf.yaml users posts
+fireconf import --project YOUR_PROJECT_ID --output fireconf.yaml --collections users --collections posts
 
 # For non-default databases, collection names must be specified explicitly
-fireconf import --project YOUR_PROJECT_ID --database warren-v1 users posts > fireconf.yaml
+fireconf import --project YOUR_PROJECT_ID --database warren-v1 --collections users --collections posts > fireconf.yaml
 ```
 
 **Note**: Automatic collection discovery is only available for the default database. For non-default databases, you must specify collection names explicitly due to Firestore client limitations.

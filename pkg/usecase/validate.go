@@ -103,18 +103,18 @@ func (v *Validator) validateIndexConstraints(index model.Index, indexNum int) er
 		if nameFieldIndex >= 0 {
 			for _, vectorIndex := range vectorFieldIndices {
 				if vectorIndex < nameFieldIndex {
-					return fmt.Errorf("index[%d]: vector config field '%s' must be after __name__ field", 
+					return fmt.Errorf("index[%d]: vector config field '%s' must be after __name__ field",
 						indexNum, fields[vectorIndex].Name)
 				}
 			}
 		}
-		
+
 		// All vector fields must be at the end
 		expectedStart := len(fields) - len(vectorFieldIndices)
 		for j, vectorIndex := range vectorFieldIndices {
 			expectedIndex := expectedStart + j
 			if vectorIndex != expectedIndex {
-				return fmt.Errorf("index[%d]: vector config field '%s' must be at the end of the index (expected position %d, got %d)", 
+				return fmt.Errorf("index[%d]: vector config field '%s' must be at the end of the index (expected position %d, got %d)",
 					indexNum, fields[vectorIndex].Name, expectedIndex, vectorIndex)
 			}
 		}
@@ -166,3 +166,4 @@ func (v *Validator) validateTTLConstraints(ttl model.TTL) error {
 
 	return nil
 }
+

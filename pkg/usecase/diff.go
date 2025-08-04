@@ -121,8 +121,8 @@ func convertModelToFirestoreIndex(idx model.Index) interfaces.FirestoreIndex {
 	return firestoreIndex
 }
 
-// ConvertFirestoreToModelIndex converts Firestore index to domain model
-func ConvertFirestoreToModelIndex(idx interfaces.FirestoreIndex) model.Index {
+// convertFirestoreToModelIndex converts Firestore index to domain model
+func convertFirestoreToModelIndex(idx interfaces.FirestoreIndex) model.Index {
 	modelIndex := model.Index{
 		QueryScope: idx.QueryScope,
 		Fields:     make([]model.IndexField, 0, len(idx.Fields)),
@@ -151,3 +151,4 @@ func ConvertFirestoreToModelIndex(idx interfaces.FirestoreIndex) model.Index {
 
 	return modelIndex
 }
+

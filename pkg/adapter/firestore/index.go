@@ -32,7 +32,7 @@ func (c *Client) ListIndexes(ctx context.Context, collectionID string) ([]interf
 		// Extract collection ID from index name
 		// Index name format: projects/{project}/databases/{database}/collectionGroups/{collection}/indexes/{index}
 		indexCollectionID := extractCollectionFromIndexName(index.GetName())
-		
+
 		// Only include indexes that belong to the requested collection
 		if indexCollectionID != collectionID {
 			continue
