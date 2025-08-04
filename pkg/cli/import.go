@@ -53,10 +53,7 @@ func runImport(ctx context.Context, c *cli.Command) error {
 		return goerr.Wrap(err, "failed to create Firestore client")
 	}
 
-	// Type assert to get Close method
-	if closer, ok := client.(*firestore.Client); ok {
-		defer closer.Close()
-	}
+	defer client.Close()
 
 	// Get collection names from flag or discover all collections
 	collections := c.StringSlice("collections")

@@ -79,10 +79,7 @@ func runSync(ctx context.Context, c *cli.Command) error {
 		return goerr.Wrap(err, "failed to create Firestore client")
 	}
 
-	// Type assert to get Close method
-	if closer, ok := client.(*firestore.Client); ok {
-		defer closer.Close()
-	}
+	defer client.Close()
 
 	// Create sync use case
 	sync := usecase.NewSyncWithOptions(client, logger, c.Bool("dry-run"), c.Bool("skip-wait"))

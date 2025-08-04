@@ -19,6 +19,9 @@ var _ interfaces.FirestoreClient = &FirestoreClientMock{}
 //
 //		// make and configure a mocked interfaces.FirestoreClient
 //		mockedFirestoreClient := &FirestoreClientMock{
+//			CloseFunc: func() error {
+//				panic("mock out the Close method")
+//			},
 //			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
 //				panic("mock out the CollectionExists method")
 //			},
@@ -56,6 +59,9 @@ var _ interfaces.FirestoreClient = &FirestoreClientMock{}
 //
 //	}
 type FirestoreClientMock struct {
+	// CloseFunc mocks the Close method.
+	CloseFunc func() error
+
 	// CollectionExistsFunc mocks the CollectionExists method.
 	CollectionExistsFunc func(ctx context.Context, collectionID string) (bool, error)
 
@@ -88,6 +94,9 @@ type FirestoreClientMock struct {
 
 	// calls tracks calls to the methods.
 	calls struct {
+		// Close holds details about calls to the Close method.
+		Close []struct {
+		}
 		// CollectionExists holds details about calls to the CollectionExists method.
 		CollectionExists []struct {
 			// Ctx is the ctx argument value.
@@ -163,6 +172,7 @@ type FirestoreClientMock struct {
 			Operation interface{}
 		}
 	}
+	lockClose            sync.RWMutex
 	lockCollectionExists sync.RWMutex
 	lockCreateCollection sync.RWMutex
 	lockCreateIndex      sync.RWMutex
@@ -173,6 +183,33 @@ type FirestoreClientMock struct {
 	lockListCollections  sync.RWMutex
 	lockListIndexes      sync.RWMutex
 	lockWaitForOperation sync.RWMutex
+}
+
+// Close calls CloseFunc.
+func (mock *FirestoreClientMock) Close() error {
+	if mock.CloseFunc == nil {
+		panic("FirestoreClientMock.CloseFunc: method is nil but FirestoreClient.Close was just called")
+	}
+	callInfo := struct {
+	}{}
+	mock.lockClose.Lock()
+	mock.calls.Close = append(mock.calls.Close, callInfo)
+	mock.lockClose.Unlock()
+	return mock.CloseFunc()
+}
+
+// CloseCalls gets all the calls that were made to Close.
+// Check the length with:
+//
+//	len(mockedFirestoreClient.CloseCalls())
+func (mock *FirestoreClientMock) CloseCalls() []struct {
+} {
+	var calls []struct {
+	}
+	mock.lockClose.RLock()
+	calls = mock.calls.Close
+	mock.lockClose.RUnlock()
+	return calls
 }
 
 // CollectionExists calls CollectionExistsFunc.

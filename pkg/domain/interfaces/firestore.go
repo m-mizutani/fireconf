@@ -2,12 +2,14 @@ package interfaces
 
 import (
 	"context"
+	"io"
 )
 
 //go:generate task mock
 
 // FirestoreClient is the interface for Firestore Admin API operations
 type FirestoreClient interface {
+	io.Closer
 	// Collection operations
 	ListCollections(ctx context.Context) ([]string, error)
 	CollectionExists(ctx context.Context, collectionID string) (bool, error)
