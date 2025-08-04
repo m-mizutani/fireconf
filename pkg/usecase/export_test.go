@@ -7,5 +7,3 @@ var (
 	ConvertModelToFirestoreIndex = convertModelToFirestoreIndex
 	ConvertFirestoreToModelIndex = convertFirestoreToModelIndex
 )
-
-

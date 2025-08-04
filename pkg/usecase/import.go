@@ -250,4 +250,3 @@ func adjustFieldOrder(index model.Index) model.Index {
 		QueryScope: index.QueryScope,
 	}
 }
-

@@ -3,6 +3,7 @@ package firestore
 import (
 	"context"
 	"fmt"
+	"path"
 
 	adminpb "cloud.google.com/go/firestore/apiv1/admin/adminpb"
 	"github.com/m-mizutani/fireconf/pkg/domain/interfaces"
@@ -165,28 +166,7 @@ func (c *Client) findTTLField(ctx context.Context, collectionID string) (string,
 }
 
 // getFieldNameFromPath extracts field name from full resource path
-func getFieldNameFromPath(path string) string {
+func getFieldNameFromPath(pathStr string) string {
 	// Path format: projects/{project}/databases/{database}/collectionGroups/{collection}/fields/{field}
-	parts := split(path, "/")
-	if len(parts) >= 2 {
-		return parts[len(parts)-1]
-	}
-	return ""
-}
-
-// split is a simple string split function
-func split(s, sep string) []string {
-	var result []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if i+len(sep) <= len(s) && s[i:i+len(sep)] == sep {
-			result = append(result, s[start:i])
-			start = i + len(sep)
-			i = start - 1
-		}
-	}
-	if start < len(s) {
-		result = append(result, s[start:])
-	}
-	return result
+	return path.Base(pathStr)
 }

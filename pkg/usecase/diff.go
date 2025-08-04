@@ -151,4 +151,3 @@ func convertFirestoreToModelIndex(idx interfaces.FirestoreIndex) model.Index {
 
 	return modelIndex
 }
-

@@ -385,5 +385,3 @@ func TestSync_Execute(t *testing.T) {
 		gt.Equal(t, len(mockClient.EnableTTLPolicyCalls()), 1) // TTL for users only
 	})
 }
-
-

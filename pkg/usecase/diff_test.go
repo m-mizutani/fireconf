@@ -310,5 +310,3 @@ func TestConvertFirestoreToModelIndex(t *testing.T) {
 		gt.Equal(t, modelIdx.Fields[1].Order, "ASCENDING")
 	})
 }
-
-

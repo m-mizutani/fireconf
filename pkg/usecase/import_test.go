@@ -275,5 +275,3 @@ func TestImport_Execute(t *testing.T) {
 		gt.Equal(t, len(config.Collections[0].Indexes), 1) // Should be deduplicated
 	})
 }
-
-

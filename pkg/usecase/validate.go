@@ -166,4 +166,3 @@ func (v *Validator) validateTTLConstraints(ttl model.TTL) error {
 
 	return nil
 }
-

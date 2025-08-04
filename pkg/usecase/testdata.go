@@ -23,4 +23,3 @@ var TestDataE2E string
 
 //go:embed testdata/e2e_simple.yaml
 var TestDataE2ESimple string
-

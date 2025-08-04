@@ -34,5 +34,3 @@ func LoadVectorTestConfig(t *testing.T) *model.Config {
 func LoadArrayTestConfig(t *testing.T) *model.Config {
 	return LoadTestConfig(t, usecase.TestDataArray)
 }
-
-

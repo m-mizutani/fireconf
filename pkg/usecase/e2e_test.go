@@ -270,5 +270,3 @@ func indexesMatch(a, b model.Index) bool {
 
 	return true
 }
-
-
