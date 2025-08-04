@@ -33,7 +33,12 @@ func TestImport_Execute(t *testing.T) {
 					},
 				}, nil
 			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				gt.Equal(t, collectionID, "users")
+				return "expireAt", nil
+			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
+				gt.Equal(t, fieldName, "expireAt")
 				return &interfaces.FirestoreTTL{
 					FieldPath: "expireAt",
 					State:     "ACTIVE",
@@ -83,6 +88,9 @@ func TestImport_Execute(t *testing.T) {
 					return nil, fmt.Errorf("unexpected collection: %s", collectionID)
 				}
 			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				return "", nil // No TTL field
+			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil // No TTL policies
 			},
@@ -119,6 +127,9 @@ func TestImport_Execute(t *testing.T) {
 					},
 				}, nil
 			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				return "", nil // No TTL field
+			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil
 			},
@@ -150,6 +161,9 @@ func TestImport_Execute(t *testing.T) {
 						State:      "READY",
 					},
 				}, nil
+			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				return "", nil // No TTL field
 			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil
@@ -185,6 +199,9 @@ func TestImport_Execute(t *testing.T) {
 					},
 				}, nil
 			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				return "", nil // No TTL field
+			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil
 			},
@@ -216,6 +233,9 @@ func TestImport_Execute(t *testing.T) {
 		mockClient := &mock.FirestoreClientMock{
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
 				return []interfaces.FirestoreIndex{}, nil
+			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				return "", fmt.Errorf("failed to find TTL field")
 			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, fmt.Errorf("failed to get TTL policy")
@@ -261,6 +281,9 @@ func TestImport_Execute(t *testing.T) {
 						State:      "READY",
 					},
 				}, nil
+			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				return "", nil // No TTL field
 			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil

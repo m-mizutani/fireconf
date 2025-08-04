@@ -78,7 +78,7 @@ func (c *Client) EnableTTLPolicy(ctx context.Context, collectionID string, field
 // DisableTTLPolicy disables TTL policy for a collection
 func (c *Client) DisableTTLPolicy(ctx context.Context, collectionID string) (interface{}, error) {
 	// First, find which field has TTL enabled
-	ttlField, err := c.findTTLField(ctx, collectionID)
+	ttlField, err := c.FindTTLField(ctx, collectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,8 +139,8 @@ func (c *Client) disableIndexOnTTLField(ctx context.Context, collectionID string
 	return nil
 }
 
-// findTTLField finds which field has TTL enabled in a collection
-func (c *Client) findTTLField(ctx context.Context, collectionID string) (string, error) {
+// FindTTLField finds which field has TTL enabled in a collection
+func (c *Client) FindTTLField(ctx context.Context, collectionID string) (string, error) {
 	req := &adminpb.ListFieldsRequest{
 		Parent: c.getParent(collectionID),
 		Filter: "ttlConfig:*",

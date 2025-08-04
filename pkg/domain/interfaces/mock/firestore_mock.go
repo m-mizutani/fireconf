@@ -40,6 +40,9 @@ var _ interfaces.FirestoreClient = &FirestoreClientMock{}
 //			EnableTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (interface{}, error) {
 //				panic("mock out the EnableTTLPolicy method")
 //			},
+//			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+//				panic("mock out the FindTTLField method")
+//			},
 //			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 //				panic("mock out the GetTTLPolicy method")
 //			},
@@ -79,6 +82,9 @@ type FirestoreClientMock struct {
 
 	// EnableTTLPolicyFunc mocks the EnableTTLPolicy method.
 	EnableTTLPolicyFunc func(ctx context.Context, collectionID string, fieldName string) (interface{}, error)
+
+	// FindTTLFieldFunc mocks the FindTTLField method.
+	FindTTLFieldFunc func(ctx context.Context, collectionID string) (string, error)
 
 	// GetTTLPolicyFunc mocks the GetTTLPolicy method.
 	GetTTLPolicyFunc func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error)
@@ -143,6 +149,13 @@ type FirestoreClientMock struct {
 			// FieldName is the fieldName argument value.
 			FieldName string
 		}
+		// FindTTLField holds details about calls to the FindTTLField method.
+		FindTTLField []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// CollectionID is the collectionID argument value.
+			CollectionID string
+		}
 		// GetTTLPolicy holds details about calls to the GetTTLPolicy method.
 		GetTTLPolicy []struct {
 			// Ctx is the ctx argument value.
@@ -179,6 +192,7 @@ type FirestoreClientMock struct {
 	lockDeleteIndex      sync.RWMutex
 	lockDisableTTLPolicy sync.RWMutex
 	lockEnableTTLPolicy  sync.RWMutex
+	lockFindTTLField     sync.RWMutex
 	lockGetTTLPolicy     sync.RWMutex
 	lockListCollections  sync.RWMutex
 	lockListIndexes      sync.RWMutex
@@ -433,6 +447,42 @@ func (mock *FirestoreClientMock) EnableTTLPolicyCalls() []struct {
 	mock.lockEnableTTLPolicy.RLock()
 	calls = mock.calls.EnableTTLPolicy
 	mock.lockEnableTTLPolicy.RUnlock()
+	return calls
+}
+
+// FindTTLField calls FindTTLFieldFunc.
+func (mock *FirestoreClientMock) FindTTLField(ctx context.Context, collectionID string) (string, error) {
+	if mock.FindTTLFieldFunc == nil {
+		panic("FirestoreClientMock.FindTTLFieldFunc: method is nil but FirestoreClient.FindTTLField was just called")
+	}
+	callInfo := struct {
+		Ctx          context.Context
+		CollectionID string
+	}{
+		Ctx:          ctx,
+		CollectionID: collectionID,
+	}
+	mock.lockFindTTLField.Lock()
+	mock.calls.FindTTLField = append(mock.calls.FindTTLField, callInfo)
+	mock.lockFindTTLField.Unlock()
+	return mock.FindTTLFieldFunc(ctx, collectionID)
+}
+
+// FindTTLFieldCalls gets all the calls that were made to FindTTLField.
+// Check the length with:
+//
+//	len(mockedFirestoreClient.FindTTLFieldCalls())
+func (mock *FirestoreClientMock) FindTTLFieldCalls() []struct {
+	Ctx          context.Context
+	CollectionID string
+} {
+	var calls []struct {
+		Ctx          context.Context
+		CollectionID string
+	}
+	mock.lockFindTTLField.RLock()
+	calls = mock.calls.FindTTLField
+	mock.lockFindTTLField.RUnlock()
 	return calls
 }
 

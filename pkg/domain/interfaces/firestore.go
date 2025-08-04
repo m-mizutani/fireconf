@@ -22,6 +22,7 @@ type FirestoreClient interface {
 
 	// TTL operations
 	GetTTLPolicy(ctx context.Context, collectionID string, fieldName string) (*FirestoreTTL, error)
+	FindTTLField(ctx context.Context, collectionID string) (string, error)
 	EnableTTLPolicy(ctx context.Context, collectionID string, fieldName string) (interface{}, error)
 	DisableTTLPolicy(ctx context.Context, collectionID string) (interface{}, error)
 

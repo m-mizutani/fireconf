@@ -144,40 +144,46 @@ func (i *Import) importIndexes(ctx context.Context, collectionName string) ([]mo
 
 // importTTL imports TTL configuration for a collection
 func (i *Import) importTTL(ctx context.Context, collectionName string) (*model.TTL, error) {
-	// Check all fields for TTL configuration
-	// We need to scan fields to find which one has TTL enabled
-
-	// For simplicity, we'll check common TTL field names first
-	commonTTLFields := []string{"expireAt", "expiresAt", "ttl", "expiry", "expirationTime"}
-
-	for _, fieldName := range commonTTLFields {
-		ttl, err := i.client.GetTTLPolicy(ctx, collectionName, fieldName)
-		if err != nil {
-			// Log but continue checking other fields
-			i.logger.Debug("Error checking TTL field",
-				slog.String("collection", collectionName),
-				slog.String("field", fieldName),
-				slog.String("error", err.Error()))
-			continue
-		}
-
-		if ttl != nil && (ttl.State == "ACTIVE" || ttl.State == "CREATING") {
-			i.logger.Debug("Found TTL policy",
-				slog.String("collection", collectionName),
-				slog.String("field", fieldName))
-
-			return &model.TTL{
-				Field: fieldName,
-			}, nil
-		}
+	// Find which field has TTL enabled in this collection
+	ttlField, err := i.client.FindTTLField(ctx, collectionName)
+	if err != nil {
+		// Log the error but continue - TTL is optional
+		i.logger.Debug("Failed to find TTL field",
+			slog.String("collection", collectionName),
+			slog.String("error", err.Error()))
+		return nil, nil
 	}
 
-	// If no common fields found, we could list all fields with TTL config
-	// but that requires a different API approach
-	// For now, return nil (no TTL configured)
+	// No TTL field found
+	if ttlField == "" {
+		i.logger.Debug("No TTL policy found",
+			slog.String("collection", collectionName))
+		return nil, nil
+	}
 
-	i.logger.Debug("No TTL policy found",
-		slog.String("collection", collectionName))
+	// Verify the TTL policy is active
+	ttl, err := i.client.GetTTLPolicy(ctx, collectionName, ttlField)
+	if err != nil {
+		return nil, goerr.Wrap(err, "failed to get TTL policy",
+			goerr.V("collection", collectionName),
+			goerr.V("field", ttlField))
+	}
+
+	if ttl != nil && (ttl.State == "ACTIVE" || ttl.State == "CREATING") {
+		i.logger.Debug("Found TTL policy",
+			slog.String("collection", collectionName),
+			slog.String("field", ttlField))
+
+		return &model.TTL{
+			Field: ttlField,
+		}, nil
+	}
+
+	// TTL field exists but not active
+	i.logger.Debug("TTL field found but not active",
+		slog.String("collection", collectionName),
+		slog.String("field", ttlField),
+		slog.String("state", ttl.State))
 
 	return nil, nil
 }
