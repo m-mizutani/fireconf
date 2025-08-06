@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/m-mizutani/fireconf/pkg/domain/interfaces"
 	"github.com/m-mizutani/fireconf/pkg/domain/model"
@@ -43,29 +44,50 @@ func NewSyncWithOptions(client interfaces.FirestoreClient, logger *slog.Logger, 
 func (s *Sync) Execute(ctx context.Context, config *model.Config) error {
 	s.logger.Info("Starting sync operation", slog.Bool("dryRun", s.dryRun))
 
-	// Process each collection
+	// Process collections in parallel
+	g, ctx := errgroup.WithContext(ctx)
+
+	// Limit concurrent collection processing
+	sem := make(chan struct{}, 10) // Process up to 10 collections concurrently
+
 	for _, collection := range config.Collections {
-		s.logger.Info("Processing collection", slog.String("name", collection.Name))
+		collection := collection // capture
 
-		// Validate collection
-		if err := collection.Validate(); err != nil {
-			return goerr.Wrap(err, "invalid collection configuration", goerr.V("collection", collection.Name))
-		}
+		g.Go(func() error {
+			// Acquire semaphore
+			sem <- struct{}{}
+			defer func() { <-sem }()
 
-		// Ensure collection exists before processing indexes/TTL
-		if err := s.ensureCollectionExists(ctx, collection.Name); err != nil {
-			return goerr.Wrap(err, "failed to ensure collection exists", goerr.V("collection", collection.Name))
-		}
+			s.logger.Info("Processing collection", slog.String("name", collection.Name))
 
-		// Sync indexes
-		if err := s.syncIndexes(ctx, collection); err != nil {
-			return goerr.Wrap(err, "failed to sync indexes", goerr.V("collection", collection.Name))
-		}
+			// Validate collection
+			if err := collection.Validate(); err != nil {
+				return goerr.Wrap(err, "invalid collection configuration", goerr.V("collection", collection.Name))
+			}
 
-		// Sync TTL
-		if err := s.syncTTL(ctx, collection); err != nil {
-			return goerr.Wrap(err, "failed to sync TTL", goerr.V("collection", collection.Name))
-		}
+			// Ensure collection exists before processing indexes/TTL
+			if err := s.ensureCollectionExists(ctx, collection.Name); err != nil {
+				return goerr.Wrap(err, "failed to ensure collection exists", goerr.V("collection", collection.Name))
+			}
+
+			// Sync indexes
+			if err := s.syncIndexes(ctx, collection); err != nil {
+				return goerr.Wrap(err, "failed to sync indexes", goerr.V("collection", collection.Name))
+			}
+
+			// Sync TTL
+			if err := s.syncTTL(ctx, collection); err != nil {
+				return goerr.Wrap(err, "failed to sync TTL", goerr.V("collection", collection.Name))
+			}
+
+			s.logger.Info("Collection processing completed", slog.String("name", collection.Name))
+			return nil
+		})
+	}
+
+	// Wait for all collections to complete
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	s.logger.Info("Sync operation completed successfully")
@@ -162,7 +184,15 @@ func (s *Sync) syncIndexes(ctx context.Context, collection model.Collection) err
 			s.logger.Info("Waiting for index deletion to complete",
 				slog.String("collection", collection.Name),
 				slog.String("index", idx.Name))
-			if err := s.client.WaitForOperation(ctx, op); err != nil {
+			
+			progressLogger := func(elapsed time.Duration) {
+				s.logger.Info("Still waiting for index deletion...",
+					slog.String("collection", collection.Name),
+					slog.String("index", idx.Name),
+					slog.Duration("elapsed", elapsed))
+			}
+			
+			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
 				return goerr.Wrap(err, "failed to wait for index deletion", goerr.V("index", idx.Name))
 			}
 		}
@@ -216,7 +246,15 @@ func (s *Sync) createIndexesConcurrently(ctx context.Context, collectionName str
 				s.logger.Info("Waiting for index creation to complete",
 					slog.String("collection", collectionName),
 					slog.Any("fields", idx.Fields))
-				if err := s.client.WaitForOperation(ctx, op); err != nil {
+				
+				progressLogger := func(elapsed time.Duration) {
+					s.logger.Info("Still waiting for index creation...",
+						slog.String("collection", collectionName),
+						slog.Any("fields", idx.Fields),
+						slog.Duration("elapsed", elapsed))
+				}
+				
+				if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
 					return goerr.Wrap(err, "failed to wait for index creation",
 						goerr.V("collection", collectionName),
 						goerr.V("fields", idx.Fields))
@@ -249,7 +287,14 @@ func (s *Sync) syncTTL(ctx context.Context, collection model.Collection) error {
 		if !s.skipWait && op != nil {
 			s.logger.Info("Waiting for TTL policy disable to complete",
 				slog.String("collection", collection.Name))
-			if err := s.client.WaitForOperation(ctx, op); err != nil {
+			
+			progressLogger := func(elapsed time.Duration) {
+				s.logger.Info("Still waiting for TTL policy disable...",
+					slog.String("collection", collection.Name),
+					slog.Duration("elapsed", elapsed))
+			}
+			
+			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
 				return goerr.Wrap(err, "failed to wait for TTL policy disable")
 			}
 		}
@@ -294,7 +339,15 @@ func (s *Sync) syncTTL(ctx context.Context, collection model.Collection) error {
 			s.logger.Info("Waiting for TTL policy enable to complete",
 				slog.String("collection", collection.Name),
 				slog.String("field", collection.TTL.Field))
-			if err := s.client.WaitForOperation(ctx, op); err != nil {
+			
+			progressLogger := func(elapsed time.Duration) {
+				s.logger.Info("Still waiting for TTL policy enable...",
+					slog.String("collection", collection.Name),
+					slog.String("field", collection.TTL.Field),
+					slog.Duration("elapsed", elapsed))
+			}
+			
+			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
 				return goerr.Wrap(err, "failed to wait for TTL policy enable")
 			}
 		}
@@ -312,7 +365,14 @@ func (s *Sync) syncTTL(ctx context.Context, collection model.Collection) error {
 		if !s.skipWait && op != nil {
 			s.logger.Info("Waiting for old TTL policy disable to complete",
 				slog.String("collection", collection.Name))
-			if err := s.client.WaitForOperation(ctx, op); err != nil {
+			
+			progressLogger := func(elapsed time.Duration) {
+				s.logger.Info("Still waiting for old TTL policy disable...",
+					slog.String("collection", collection.Name),
+					slog.Duration("elapsed", elapsed))
+			}
+			
+			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
 				return goerr.Wrap(err, "failed to wait for old TTL policy disable")
 			}
 		}
@@ -331,13 +391,50 @@ func (s *Sync) syncTTL(ctx context.Context, collection model.Collection) error {
 			s.logger.Info("Waiting for new TTL policy enable to complete",
 				slog.String("collection", collection.Name),
 				slog.String("field", collection.TTL.Field))
-			if err := s.client.WaitForOperation(ctx, op); err != nil {
+			
+			progressLogger := func(elapsed time.Duration) {
+				s.logger.Info("Still waiting for new TTL policy enable...",
+					slog.String("collection", collection.Name),
+					slog.String("field", collection.TTL.Field),
+					slog.Duration("elapsed", elapsed))
+			}
+			
+			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
 				return goerr.Wrap(err, "failed to wait for new TTL policy enable")
 			}
 		}
 	}
 
 	return nil
+}
+
+// waitForOperationWithProgress is a helper method that wraps client wait with progress logging
+func (s *Sync) waitForOperationWithProgress(ctx context.Context, operation interface{}, progressFunc func(time.Duration)) error {
+	// Use custom wait logic with progress reporting
+	start := time.Now()
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	done := make(chan error, 1)
+
+	// Start the wait operation in a goroutine
+	go func() {
+		done <- s.client.WaitForOperation(ctx, operation)
+	}()
+
+	// Log progress every 10 seconds
+	for {
+		select {
+		case err := <-done:
+			return err
+		case <-ticker.C:
+			if progressFunc != nil {
+				progressFunc(time.Since(start))
+			}
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 // ensureCollectionExists ensures a collection exists before syncing

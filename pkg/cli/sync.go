@@ -60,13 +60,6 @@ func runSync(ctx context.Context, c *cli.Command) error {
 		return goerr.Wrap(err, "failed to parse YAML", goerr.V("path", configPath))
 	}
 
-	// Validate configuration
-	for _, collection := range config.Collections {
-		if err := collection.Validate(); err != nil {
-			return goerr.Wrap(err, "invalid configuration", goerr.V("collection", collection.Name))
-		}
-	}
-
 	// Create Firestore client
 	authConfig := firestore.AuthConfig{
 		ProjectID:   c.String("project"),

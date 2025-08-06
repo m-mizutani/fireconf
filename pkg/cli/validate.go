@@ -3,11 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"os"
 
 	"github.com/goccy/go-yaml"
-	"github.com/m-mizutani/clog"
 	"github.com/m-mizutani/fireconf/pkg/domain/model"
 	"github.com/m-mizutani/fireconf/pkg/usecase"
 	"github.com/m-mizutani/goerr/v2"
@@ -25,28 +23,6 @@ func newValidateCommand() *cli.Command {
 				Usage:   "Configuration file path",
 				Value:   "fireconf.yaml",
 			},
-			&cli.BoolFlag{
-				Name:    "verbose",
-				Aliases: []string{"v"},
-				Usage:   "Enable verbose logging",
-			},
-		},
-		Before: func(ctx context.Context, c *cli.Command) (context.Context, error) {
-			// Setup logger for validate command specifically
-			level := slog.LevelInfo
-			if c.Bool("verbose") {
-				level = slog.LevelDebug
-			}
-
-			handler := clog.New(
-				clog.WithLevel(level),
-				clog.WithColor(true),
-				clog.WithSource(false),
-			)
-			logger := slog.New(handler)
-			slog.SetDefault(logger)
-
-			return ctx, nil
 		},
 		Action: runValidate,
 	}
