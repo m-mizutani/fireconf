@@ -1,0 +1,15 @@
+collections:
+- name: posts
+  indexes:
+  - fields:
+    - name: tags
+      array_config: CONTAINS
+    - name: score
+      order: DESCENDING
+    query_scope: COLLECTION
+  - fields:
+    - name: categories
+      array_config: CONTAINS
+    - name: publishedAt
+      order: DESCENDING
+    query_scope: COLLECTION_GROUP

@@ -1,0 +1,25 @@
+# Test configuration for E2E tests
+# This file uses a placeholder for collection name that will be replaced at runtime
+collections:
+- name: __TEST_COLLECTION__
+  indexes:
+  - fields:
+    - name: email
+      order: ASCENDING
+    - name: createdAt
+      order: DESCENDING
+    query_scope: COLLECTION
+  - fields:
+    - name: status
+      order: ASCENDING
+    - name: isActive
+      order: ASCENDING
+    query_scope: COLLECTION_GROUP
+  - fields:
+    - name: tags
+      array_config: CONTAINS
+    - name: score
+      order: DESCENDING
+    query_scope: COLLECTION
+  ttl:
+    field: expireAt

@@ -1,0 +1,10 @@
+# Simple test configuration for E2E tests without TTL
+collections:
+- name: __TEST_COLLECTION__
+  indexes:
+  - fields:
+    - name: email
+      order: ASCENDING
+    - name: createdAt
+      order: DESCENDING
+    query_scope: COLLECTION

@@ -1,0 +1,25 @@
+collections:
+- name: documents
+  indexes:
+  - fields:
+    - name: title
+      order: ASCENDING
+    - name: __name__
+      order: ASCENDING
+    - name: embedding
+      order: ASCENDING
+      vector_config:
+        dimension: 768
+    query_scope: COLLECTION
+  - fields:
+    - name: category
+      order: ASCENDING
+    - name: createdAt
+      order: DESCENDING
+    - name: __name__
+      order: ASCENDING
+    - name: searchVector
+      order: ASCENDING
+      vector_config:
+        dimension: 1536
+    query_scope: COLLECTION

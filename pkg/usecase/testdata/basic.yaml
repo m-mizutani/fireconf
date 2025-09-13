@@ -1,0 +1,25 @@
+collections:
+- name: users
+  indexes:
+  - fields:
+    - name: email
+      order: ASCENDING
+    - name: createdAt
+      order: DESCENDING
+    query_scope: COLLECTION
+  - fields:
+    - name: status
+      order: ASCENDING
+    - name: isActive
+      order: ASCENDING
+    query_scope: COLLECTION_GROUP
+  ttl:
+    field: expireAt
+- name: posts
+  indexes:
+  - fields:
+    - name: authorId
+      order: ASCENDING
+    - name: publishedAt
+      order: DESCENDING
+    query_scope: COLLECTION

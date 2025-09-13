@@ -1,0 +1,22 @@
+collections:
+- name: ""  # Invalid: empty name
+  indexes:
+  - fields:
+    - name: email
+      order: ASCENDING
+    query_scope: COLLECTION
+- name: invalid_index
+  indexes:
+  - fields:
+    - name: field1
+      order: INVALID_ORDER  # Invalid order
+    query_scope: COLLECTION
+- name: invalid_vector
+  indexes:
+  - fields:
+    - name: embedding
+      vector_config:
+        dimension: 0  # Invalid: must be positive
+    - name: title
+      order: ASCENDING  # Invalid: vector must be last
+    query_scope: COLLECTION
