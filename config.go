@@ -81,22 +81,17 @@ func LoadConfigFromYAML(path string) (*Config, error) {
 		return nil, goerr.Wrap(err, "failed to read config file")
 	}
 
-	var internalConfig model.Config
-	if err := yaml.Unmarshal(data, &internalConfig); err != nil {
+	var config Config
+	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, goerr.Wrap(err, "failed to parse YAML")
 	}
 
-	// Convert internal model to public API
-	config := convertFromInternalConfig(&internalConfig)
-	return config, nil
+	return &config, nil
 }
 
 // SaveToYAML saves configuration to a YAML file
 func (c *Config) SaveToYAML(path string) error {
-	// Convert to internal model
-	internalConfig := convertToInternalConfig(c)
-
-	data, err := yaml.Marshal(internalConfig)
+	data, err := yaml.Marshal(c)
 	if err != nil {
 		return goerr.Wrap(err, "failed to marshal config to YAML")
 	}

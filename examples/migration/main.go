@@ -23,7 +23,7 @@ func main() {
 	}
 
 	// Step 2: Create client
-	client, err := fireconf.NewClient(ctx, "my-project")
+	client, err := fireconf.NewClient(ctx, "my-project", "(default)")
 	if err != nil {
 		log.Fatal(err)
 	}

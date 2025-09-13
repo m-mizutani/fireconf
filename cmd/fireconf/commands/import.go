@@ -46,17 +46,22 @@ func runImport(ctx context.Context, c *cli.Command) error {
 		return goerr.New("project flag is required for import command")
 	}
 
+	// Get database ID
+	databaseID := c.String("database")
+	if databaseID == "" {
+		return goerr.New("database flag is required for import command")
+	}
+
 	// Create fireconf client
 	opts := []fireconf.Option{
 		fireconf.WithLogger(logger),
-		fireconf.WithDatabaseID(c.String("database")),
 	}
 
 	if credentials := c.String("credentials"); credentials != "" {
 		opts = append(opts, fireconf.WithCredentialsFile(credentials))
 	}
 
-	client, err := fireconf.NewClient(ctx, projectID, opts...)
+	client, err := fireconf.NewClient(ctx, projectID, databaseID, opts...)
 	if err != nil {
 		return goerr.Wrap(err, "failed to create client")
 	}
@@ -67,7 +72,7 @@ func runImport(ctx context.Context, c *cli.Command) error {
 
 	logger.Info("Importing Firestore configuration",
 		"project", projectID,
-		"database", c.String("database"),
+		"database", databaseID,
 		"collections", collections)
 
 	// Execute import

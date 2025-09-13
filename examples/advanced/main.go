@@ -18,9 +18,8 @@ func main() {
 	}))
 
 	// Create client with options
-	client, err := fireconf.NewClient(ctx, "my-project",
+	client, err := fireconf.NewClient(ctx, "my-project", "custom-db",
 		fireconf.WithLogger(logger),
-		fireconf.WithDatabaseID("custom-db"),
 		fireconf.WithCredentialsFile("service-account.json"),
 		fireconf.WithDryRun(false),
 		fireconf.WithVerbose(true),

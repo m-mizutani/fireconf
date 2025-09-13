@@ -33,10 +33,15 @@ func (i *Import) Execute(ctx context.Context, collections []string) (*model.Conf
 		Collections: make([]model.Collection, 0, len(collections)),
 	}
 
-	// If no collections specified, we can't auto-discover them
-	// User must specify collections to import
+	// If no collections specified, discover all collections
 	if len(collections) == 0 {
-		return nil, goerr.New("no collections specified to import")
+		i.logger.Info("No collections specified, discovering all collections...")
+		discovered, err := i.client.ListCollections(ctx)
+		if err != nil {
+			return nil, goerr.Wrap(err, "failed to discover collections. Please specify collection names explicitly if discovery fails.")
+		}
+		collections = discovered
+		i.logger.Info("Discovered collections", "count", len(collections))
 	}
 
 	// Process each collection

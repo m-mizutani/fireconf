@@ -35,11 +35,11 @@ func run(args []string) error {
 				Required: false, // Will be required for subcommands
 			},
 			&cli.StringFlag{
-				Name:    "database",
-				Aliases: []string{"d"},
-				Usage:   "Firestore database ID",
-				Value:   "(default)",
-				Sources: cli.EnvVars("FIRECONF_DATABASE"),
+				Name:     "database",
+				Aliases:  []string{"d"},
+				Usage:    "Firestore database ID",
+				Sources:  cli.EnvVars("FIRECONF_DATABASE"),
+				Required: false, // Will be required for subcommands that need it
 			},
 			&cli.StringFlag{
 				Name:    "credentials",

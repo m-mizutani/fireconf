@@ -7,9 +7,6 @@ type Options struct {
 	// Logger for logging operations
 	Logger *slog.Logger
 
-	// DatabaseID specifies the Firestore database ID (default: "(default)")
-	DatabaseID string
-
 	// CredentialsFile specifies the service account key file path (optional)
 	CredentialsFile string
 
@@ -27,13 +24,6 @@ type Option func(*Options)
 func WithLogger(logger *slog.Logger) Option {
 	return func(o *Options) {
 		o.Logger = logger
-	}
-}
-
-// WithDatabaseID sets the database ID
-func WithDatabaseID(databaseID string) Option {
-	return func(o *Options) {
-		o.DatabaseID = databaseID
 	}
 }
 
@@ -61,8 +51,7 @@ func WithVerbose(verbose bool) Option {
 // applyOptions applies option functions to Options
 func applyOptions(opts []Option) *Options {
 	options := &Options{
-		Logger:     slog.Default(),
-		DatabaseID: "(default)",
+		Logger: slog.Default(),
 	}
 
 	for _, opt := range opts {

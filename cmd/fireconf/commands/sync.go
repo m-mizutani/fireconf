@@ -53,10 +53,15 @@ func runSync(ctx context.Context, c *cli.Command) error {
 		return goerr.Wrap(err, "invalid configuration")
 	}
 
+	// Get database ID
+	databaseID := c.String("database")
+	if databaseID == "" {
+		return goerr.New("database flag is required for sync command")
+	}
+
 	// Create fireconf client
 	opts := []fireconf.Option{
 		fireconf.WithLogger(logger),
-		fireconf.WithDatabaseID(c.String("database")),
 		fireconf.WithDryRun(c.Bool("dry-run")),
 	}
 
@@ -64,7 +69,7 @@ func runSync(ctx context.Context, c *cli.Command) error {
 		opts = append(opts, fireconf.WithCredentialsFile(credentials))
 	}
 
-	client, err := fireconf.NewClient(ctx, projectID, opts...)
+	client, err := fireconf.NewClient(ctx, projectID, databaseID, opts...)
 	if err != nil {
 		return goerr.Wrap(err, "failed to create client")
 	}

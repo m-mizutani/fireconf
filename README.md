@@ -49,7 +49,7 @@ func main() {
     ctx := context.Background()
 
     // Create a new fireconf client
-    client, err := fireconf.NewClient(ctx, "my-project")
+    client, err := fireconf.NewClient(ctx, "my-project", "(default)")
     if err != nil {
         log.Fatal(err)
     }
@@ -115,9 +115,8 @@ if err := config.SaveToYAML("fireconf.yaml"); err != nil {
 ### Advanced Options
 
 ```go
-client, err := fireconf.NewClient(ctx, "my-project",
+client, err := fireconf.NewClient(ctx, "my-project", "custom-db",
     fireconf.WithLogger(logger),
-    fireconf.WithDatabaseID("custom-db"),
     fireconf.WithCredentialsFile("service-account.json"),
     fireconf.WithDryRun(true),
 )
@@ -145,12 +144,12 @@ for _, step := range plan.Steps {
 Apply index and TTL configuration from a YAML file to Firestore:
 
 ```bash
-fireconf sync --project YOUR_PROJECT_ID --config fireconf.yaml
+fireconf sync --project YOUR_PROJECT_ID --database "(default)" --config fireconf.yaml
 ```
 
 Options:
 - `--project`, `-p`: Google Cloud project ID (required)
-- `--database`, `-d`: Firestore database ID (default: "(default)")
+- `--database`, `-d`: Firestore database ID (required)
 - `--config`, `-c`: Configuration file path (default: "fireconf.yaml")
 - `--dry-run`: Show what would be changed without making actual changes
 - `--verbose`, `-v`: Enable verbose logging
@@ -161,16 +160,16 @@ Export existing Firestore configuration to YAML:
 
 ```bash
 # Import all collections from default database
-fireconf import --project YOUR_PROJECT_ID > fireconf.yaml
+fireconf import --project YOUR_PROJECT_ID --database "(default)" > fireconf.yaml
 
 # Import specific collections
-fireconf import --project YOUR_PROJECT_ID --collections users --collections posts --collections comments > fireconf.yaml
+fireconf import --project YOUR_PROJECT_ID --database "(default)" --collections users --collections posts --collections comments > fireconf.yaml
 
 # Or use the short form
-fireconf import --project YOUR_PROJECT_ID -c users -c posts -c comments > fireconf.yaml
+fireconf import --project YOUR_PROJECT_ID --database "(default)" -c users -c posts -c comments > fireconf.yaml
 
 # Export to a specific file
-fireconf import --project YOUR_PROJECT_ID --output fireconf.yaml --collections users --collections posts
+fireconf import --project YOUR_PROJECT_ID --database "(default)" --output fireconf.yaml --collections users --collections posts
 
 # For non-default databases, collection names must be specified explicitly
 fireconf import --project YOUR_PROJECT_ID --database warren-v1 --collections users --collections posts > fireconf.yaml
@@ -184,7 +183,7 @@ Validate a configuration file without applying changes:
 fireconf validate --config fireconf.yaml
 ```
 
-**Note**: Automatic collection discovery is only available for the default database. For non-default databases, you must specify collection names explicitly due to Firestore client limitations.
+**Note**: The `--database` flag is now required for all commands. Automatic collection discovery is available for all databases when no collections are specified explicitly.
 
 ## Configuration Format
 

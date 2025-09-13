@@ -20,13 +20,21 @@ type Client struct {
 }
 
 // NewClient creates a new fireconf client
-func NewClient(ctx context.Context, projectID string, opts ...Option) (*Client, error) {
+func NewClient(ctx context.Context, projectID, databaseID string, opts ...Option) (*Client, error) {
 	options := applyOptions(opts)
+
+	// Validate required parameters
+	if projectID == "" {
+		return nil, goerr.New("project ID is required")
+	}
+	if databaseID == "" {
+		return nil, goerr.New("database ID is required")
+	}
 
 	// Create Firestore client
 	config := firestore.AuthConfig{
 		ProjectID:   projectID,
-		DatabaseID:  options.DatabaseID,
+		DatabaseID:  databaseID,
 		Credentials: options.CredentialsFile,
 	}
 
@@ -92,34 +100,34 @@ func (c *Client) Import(ctx context.Context, collections ...string) (*Config, er
 func (c *Client) DiffConfigs(current, desired *Config) *DiffResult {
 	currentInternal := convertToInternalConfig(current)
 	desiredInternal := convertToInternalConfig(desired)
-	
+
 	result := &DiffResult{
 		Collections: make([]CollectionDiff, 0),
 	}
-	
+
 	// Create maps for easier comparison
 	currentMap := make(map[string]model.Collection)
 	desiredMap := make(map[string]model.Collection)
-	
+
 	for _, col := range currentInternal.Collections {
 		currentMap[col.Name] = col
 	}
-	
+
 	for _, col := range desiredInternal.Collections {
 		desiredMap[col.Name] = col
 	}
-	
+
 	// Check for collections to add or modify
 	for name, desiredCol := range desiredMap {
 		currentCol, exists := currentMap[name]
-		
+
 		if !exists {
 			// Collection to add
 			result.Collections = append(result.Collections, CollectionDiff{
-				Name:      name,
-				Action:    ActionAdd,
-				Indexes:   convertIndexesToPublic(desiredCol.Indexes),
-				TTL:       convertTTLToPublic(desiredCol.TTL),
+				Name:    name,
+				Action:  ActionAdd,
+				Indexes: convertIndexesToPublic(desiredCol.Indexes),
+				TTL:     convertTTLToPublic(desiredCol.TTL),
 			})
 		} else {
 			// Compare indexes and TTL
@@ -127,7 +135,7 @@ func (c *Client) DiffConfigs(current, desired *Config) *DiffResult {
 				Name:   name,
 				Action: ActionModify,
 			}
-			
+
 			// Compare indexes - use simple comparison for now
 			// This is a simplified diff that compares index counts
 			indexChanges := len(desiredCol.Indexes) != len(currentCol.Indexes)
@@ -135,7 +143,7 @@ func (c *Client) DiffConfigs(current, desired *Config) *DiffResult {
 				diff.IndexesToAdd = convertIndexesToPublic(desiredCol.Indexes)
 				diff.IndexesToDelete = convertIndexesToPublic(currentCol.Indexes)
 			}
-			
+
 			// Compare TTL
 			if (desiredCol.TTL == nil) != (currentCol.TTL == nil) ||
 				(desiredCol.TTL != nil && currentCol.TTL != nil && desiredCol.TTL.Field != currentCol.TTL.Field) {
@@ -147,14 +155,14 @@ func (c *Client) DiffConfigs(current, desired *Config) *DiffResult {
 					diff.TTLAction = ActionAdd
 				}
 			}
-			
+
 			// Only add to result if there are changes
 			if indexChanges || diff.TTLAction != "" {
 				result.Collections = append(result.Collections, diff)
 			}
 		}
 	}
-	
+
 	// Check for collections to delete
 	for name := range currentMap {
 		if _, exists := desiredMap[name]; !exists {
@@ -164,10 +172,9 @@ func (c *Client) DiffConfigs(current, desired *Config) *DiffResult {
 			})
 		}
 	}
-	
+
 	return result
 }
-
 
 // DiffResult represents the difference between configurations
 type DiffResult struct {
@@ -232,4 +239,3 @@ func convertTTLToPublic(ttl *model.TTL) *TTL {
 		Field: ttl.Field,
 	}
 }
-
