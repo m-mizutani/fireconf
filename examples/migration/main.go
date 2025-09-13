@@ -38,7 +38,7 @@ func main() {
 
 	// Step 4: Compare configurations
 	log.Println("Comparing configurations...")
-	diff := fireconf.Diff(currentConfig, yamlConfig)
+	diff := client.DiffConfigs(currentConfig, yamlConfig)
 
 	// Display differences
 	if len(diff.Collections) == 0 {
@@ -75,7 +75,7 @@ func main() {
 	}
 
 	// Check if configurations match
-	finalDiff := fireconf.Diff(updatedConfig, yamlConfig)
+	finalDiff := client.DiffConfigs(updatedConfig, yamlConfig)
 	if len(finalDiff.Collections) == 0 {
 		log.Println("Migration completed successfully! Configurations match.")
 	} else {

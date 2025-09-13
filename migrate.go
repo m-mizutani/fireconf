@@ -42,7 +42,7 @@ func (c *Client) dryRunMigrate(ctx context.Context, config *Config, opts Migrate
 	}
 
 	// Calculate diff
-	diff := Diff(current, config)
+	diff := c.DiffConfigs(current, config)
 
 	// Display what would be changed
 	for _, colDiff := range diff.Collections {
@@ -105,7 +105,7 @@ func (c *Client) GetMigrationPlan(ctx context.Context, config *Config) (*Migrati
 	}
 
 	// Calculate diff
-	diff := Diff(current, config)
+	diff := c.DiffConfigs(current, config)
 
 	plan := &MigrationPlan{
 		Steps: make([]MigrationStep, 0),
