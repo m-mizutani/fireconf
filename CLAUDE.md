@@ -4,25 +4,50 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`fireconf` is a Firestore index and TTL configuration management tool. It allows you to manage Firestore composite indexes and TTL policies as code using YAML configuration files.
+`fireconf` is a Firestore index and TTL configuration management tool and Go library. It allows you to manage Firestore composite indexes and TTL policies as code using YAML configuration files or programmatic Go API.
+
+The project provides both:
+- **Go Library**: Programmatic API for Firestore configuration management
+- **CLI Tool**: Command-line interface for configuration operations
 
 ## Development Commands
 
 ### Build
+
+#### CLI Tool
 ```bash
-go build -o fireconf main.go
+# Build CLI binary
+go build -o fireconf cmd/fireconf/main.go
 # or using Task
 task build
 ```
 
-### Run
+#### Library
 ```bash
-go run main.go sync --project YOUR_PROJECT --config fireconf.yaml
-go run main.go import --project YOUR_PROJECT --collections users --collections posts
+# Test library build
+go build .
+```
+
+### Run
+
+#### CLI Commands
+```bash
+# Using go run
+go run cmd/fireconf/main.go sync --project YOUR_PROJECT --config fireconf.yaml
+go run cmd/fireconf/main.go import --project YOUR_PROJECT --collections users --collections posts
+go run cmd/fireconf/main.go validate --config fireconf.yaml
 
 # or using Task
 task run:sync PROJECT=my-project CONFIG=fireconf.yaml
 task run:import PROJECT=my-project COLLECTIONS="users posts"
+```
+
+#### Library Examples
+```bash
+# Run examples
+cd examples/basic && go run main.go
+cd examples/advanced && go run main.go
+cd examples/migration && go run main.go
 ```
 
 ### Module Management
@@ -69,6 +94,7 @@ task mock  # Generate FirestoreClient mock specifically
 - Logger handling/propagation: github.com/m-mizutani/ctxlog
 - Test framework: github.com/m-mizutani/gt
 - CLI framework: github.com/urfave/cli/v3
+- YAML processing: github.com/goccy/go-yaml
 - Mock generation tool: github.com/matryer/moq
 - Task runner: https://github.com/go-task/task
 
@@ -86,6 +112,7 @@ In principle, do not trust developers who use this library from outside
 - Do not export unnecessary methods, structs, and variables
 - Assume that exposed items will be changed. Never expose fields that would be problematic if changed
 - Use `export_test.go` for items that need to be exposed for testing purposes
+- Internal packages (`internal/`) are not accessible from outside the module
 
 ### Check
 
@@ -125,7 +152,6 @@ Before creating or modifying tests:
 3. ✓ Are all tests for a source file in ONE test file?
 4. ✓ No standalone feature/e2e/integration test files?
 
-
 ## Project Structure
 
 ```
@@ -134,41 +160,79 @@ Before creating or modifying tests:
 ├── CLAUDE.md
 ├── go.mod
 ├── LICENSE
-├── main.go
-├── pkg/
-│   ├── cli/          # CLI interface and commands
-│   ├── domain/       # Core domain logic
-│   │   ├── interfaces/
-│   │   └── model/
-│   └── usecase/      # Application use cases
-└── README.md
+├── README.md
+├── doc.go              # Package documentation
+├── fireconf.go         # Main library API
+├── config.go           # Configuration structures
+├── migrate.go          # Migration functionality
+├── options.go          # Client options
+├── errors.go           # Custom error types
+│
+├── cmd/fireconf/       # CLI application
+│   ├── main.go
+│   └── commands/
+│       ├── common.go
+│       ├── sync.go
+│       ├── import.go
+│       └── validate.go
+│
+├── internal/           # Internal implementation (not accessible externally)
+│   ├── adapter/        # Firestore Admin API implementation
+│   │   └── firestore/
+│   ├── usecase/        # Business logic
+│   ├── model/          # Internal domain models
+│   └── interfaces/     # Internal interfaces and mocks
+│       └── mock/
+│
+├── examples/           # Usage examples
+│   ├── basic/
+│   ├── advanced/
+│   └── migration/
+│
+└── testdata/          # Test data
 ```
 
 The project follows a clean architecture pattern with:
-- `main.go`: Entry point for the application
-- `pkg/`: Main source code directory
-  - `cli/`: Command-line interface implementation
-  - `domain/`: Core business logic and domain models
-  - `usecase/`: Application-specific business rules
+- **Root**: Public library API
+- **cmd/fireconf**: CLI application entry point
+- **internal/**: Private implementation details
+  - `adapter/`: Firestore Admin API implementation
+  - `usecase/`: Application business logic
+  - `model/`: Internal domain models
+  - `interfaces/`: Internal interfaces
 
 ## Architecture Notes
 
 The project follows clean architecture principles:
 
 ### Package Structure
-- `pkg/domain/model`: Domain models for configuration (YAML)
-- `pkg/domain/interfaces`: Interfaces for Firestore operations
-- `pkg/adapter/firestore`: Firestore Admin API implementation
-- `pkg/usecase`: Business logic for sync and import operations
-- `pkg/cli`: CLI command implementations using urfave/cli/v3
+- **Root package**: Public API for library users
+- `cmd/fireconf`: CLI application that uses the public library API
+- `internal/model`: Internal domain models for configuration (YAML mapping)
+- `internal/interfaces`: Interfaces for Firestore operations (with mocks)
+- `internal/adapter/firestore`: Firestore Admin API implementation
+- `internal/usecase`: Business logic for sync, import, and validation operations
 
 ### Key Design Decisions
-1. **Firestore Admin API**: Uses `cloud.google.com/go/firestore/apiv1/admin` instead of regular Firestore SDK for index/TTL management
-2. **Idempotent Operations**: All operations are designed to be safely run multiple times
-3. **TTL Field Indexing**: Automatically disables single-field indexes on TTL fields to prevent hotspots
-4. **Error Handling**: Uses `github.com/m-mizutani/goerr/v2` for structured error handling with context
+1. **Library + CLI Architecture**: Root package provides Go library API, CLI is built on top of it
+2. **Firestore Admin API**: Uses `cloud.google.com/go/firestore/apiv1/admin` instead of regular Firestore SDK for index/TTL management
+3. **Idempotent Operations**: All operations are designed to be safely run multiple times
+4. **TTL Field Indexing**: Automatically disables single-field indexes on TTL fields to prevent hotspots
+5. **Error Handling**: Uses `github.com/m-mizutani/goerr/v2` for structured error handling with context
+6. **Internal/External Separation**: Public API is separate from internal implementation
 
 ### Authentication
 - Supports Application Default Credentials (ADC)
 - Can use service account key files via environment variable
 - Requires specific IAM permissions for datastore index and operation management
+
+### Type Conversion
+- Public API uses clean, Go-idiomatic types
+- Internal models handle YAML marshaling/unmarshaling
+- Conversion layer between public API and internal models
+
+# important-instruction-reminders
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.

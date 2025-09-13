@@ -9,7 +9,7 @@ tasks:
   build:
     desc: Build the fireconf binary
     cmds:
-      - go build -o fireconf main.go
+      - go build -o fireconf cmd/fireconf/main.go
 
   test:
     desc: Run all tests
@@ -30,8 +30,8 @@ tasks:
   mock:
     desc: Generate mock for FirestoreClient interface
     cmds:
-      - mkdir -p pkg/domain/interfaces/mock
-      - moq -out pkg/domain/interfaces/mock/firestore_mock.go -pkg mock pkg/domain/interfaces FirestoreClient
+      - mkdir -p internal/interfaces/mock
+      - moq -out internal/interfaces/mock/firestore_mock.go -pkg mock internal/interfaces FirestoreClient
 
   fmt:
     desc: Format all Go files
@@ -72,7 +72,7 @@ tasks:
   run:sync:
     desc: Run sync command with example config
     cmds:
-      - go run main.go sync --project={{.PROJECT}} --database={{.DATABASE}} --config={{.CONFIG}}
+      - go run cmd/fireconf/main.go sync --project={{.PROJECT}} --database={{.DATABASE}} --config={{.CONFIG}}
     vars:
       PROJECT: '{{default "my-project" .PROJECT}}'
       DATABASE: '{{default "(default)" .DATABASE}}'
@@ -81,7 +81,7 @@ tasks:
   run:import:
     desc: Run import command
     cmds:
-      - go run main.go import --project={{.PROJECT}} --database={{.DATABASE}} {{.COLLECTIONS}}
+      - go run cmd/fireconf/main.go import --project={{.PROJECT}} --database={{.DATABASE}} {{.COLLECTIONS}}
     vars:
       PROJECT: '{{default "my-project" .PROJECT}}'
       DATABASE: '{{default "(default)" .DATABASE}}'
