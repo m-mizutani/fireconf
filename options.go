@@ -51,7 +51,7 @@ func WithVerbose(verbose bool) Option {
 // applyOptions applies option functions to Options
 func applyOptions(opts []Option) *Options {
 	options := &Options{
-		Logger: slog.Default(),
+		Logger: slog.New(slog.DiscardHandler),
 	}
 
 	for _, opt := range opts {
