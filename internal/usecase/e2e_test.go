@@ -35,7 +35,7 @@ func TestE2E_FullCycle(t *testing.T) {
 
 	client, err := firestore.NewClient(ctx, authConfig)
 	gt.NoError(t, err)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Test collection name with timestamp to avoid conflicts
 	testCollectionName := fmt.Sprintf("fireconf_e2e_test_%d", time.Now().Unix())
@@ -74,12 +74,9 @@ func TestE2E_FullCycle(t *testing.T) {
 
 		// Step 3: Sync configuration to Firestore
 		t.Log("Syncing configuration to Firestore...")
-		syncUseCase := usecase.NewSyncWithOptions(client, logger, false, true) // skipWait=true for faster tests
+		syncUseCase := usecase.NewSyncWithOptions(client, logger, false, false) // wait for indexes to be ready
 		err = syncUseCase.Execute(ctx, &originalConfig)
 		gt.NoError(t, err)
-
-		// Wait a bit for Firestore to process
-		time.Sleep(2 * time.Second)
 
 		// Step 4: Import configuration back from Firestore
 		t.Log("Importing configuration from Firestore...")
@@ -121,7 +118,7 @@ func TestE2E_FullCycle(t *testing.T) {
 
 		// Step 6: Re-sync to verify idempotency
 		t.Log("Re-syncing to verify idempotency...")
-		syncUseCase2 := usecase.NewSyncWithOptions(client, logger, false, true) // skipWait=true
+		syncUseCase2 := usecase.NewSyncWithOptions(client, logger, false, false)
 		err = syncUseCase2.Execute(ctx, importedConfig)
 		gt.NoError(t, err)
 
@@ -166,7 +163,7 @@ func TestE2E_WithTestData(t *testing.T) {
 
 	client, err := firestore.NewClient(ctx, authConfig)
 	gt.NoError(t, err)
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	testCases := []struct {
 		name     string
@@ -200,12 +197,9 @@ func TestE2E_WithTestData(t *testing.T) {
 			}
 
 			// Sync configuration
-			syncUseCase := usecase.NewSyncWithOptions(client, logger, false, true) // skipWait=true
+			syncUseCase := usecase.NewSyncWithOptions(client, logger, false, false) // wait for indexes
 			err = syncUseCase.Execute(ctx, &config)
 			gt.NoError(t, err)
-
-			// Wait for Firestore to process
-			time.Sleep(2 * time.Second)
 
 			// Import back and verify
 			for _, collection := range config.Collections {

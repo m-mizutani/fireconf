@@ -219,18 +219,20 @@ func createIndexKey(index model.Index) string {
 }
 
 // adjustFieldOrder adjusts field order to comply with Firestore constraints:
-// 1. Regular fields (with Order) first
-// 2. __name__ field (if not vector index)
+// 1. Remove __name__ field (Firestore adds it automatically)
+// 2. Regular fields (with Order) first
 // 3. Vector config fields must be last
 func adjustFieldOrder(index model.Index) model.Index {
 	var regularFields []model.IndexField
 	var vectorFields []model.IndexField
-	var nameField *model.IndexField
 
 	for _, field := range index.Fields {
+		// Skip __name__ field as it's automatically added by Firestore
 		if field.Name == "__name__" {
-			nameField = &field
-		} else if field.VectorConfig != nil {
+			continue
+		}
+
+		if field.VectorConfig != nil {
 			vectorFields = append(vectorFields, field)
 		} else {
 			regularFields = append(regularFields, field)
@@ -238,23 +240,10 @@ func adjustFieldOrder(index model.Index) model.Index {
 	}
 
 	// Reconstruct fields in correct order:
-	// For vector indexes: regular fields, __name__, vector fields (last)
-	// For non-vector indexes: regular fields, __name__ (last)
+	// Regular fields first, then vector fields
 	var newFields []model.IndexField
 	newFields = append(newFields, regularFields...)
-
-	if len(vectorFields) > 0 {
-		// Vector index: __name__ before vector fields
-		if nameField != nil {
-			newFields = append(newFields, *nameField)
-		}
-		newFields = append(newFields, vectorFields...)
-	} else {
-		// Non-vector index: __name__ at the end
-		if nameField != nil {
-			newFields = append(newFields, *nameField)
-		}
-	}
+	newFields = append(newFields, vectorFields...)
 
 	return model.Index{
 		Fields:     newFields,

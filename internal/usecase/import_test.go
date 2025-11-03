@@ -176,12 +176,13 @@ func TestImport_Execute(t *testing.T) {
 		gt.NoError(t, err)
 		gt.Equal(t, len(config.Collections[0].Indexes), 1)
 
-		// Check that vector field is properly positioned at the end
+		// Check that vector field is properly positioned at the end (without __name__)
 		fields := config.Collections[0].Indexes[0].Fields
-		gt.Equal(t, len(fields), 3)
-		gt.Equal(t, fields[2].Name, "embedding")
-		gt.NotEqual(t, fields[2].VectorConfig, nil)
-		gt.Equal(t, fields[2].VectorConfig.Dimension, 768)
+		gt.Equal(t, len(fields), 2) // title and embedding (without __name__)
+		gt.Equal(t, fields[0].Name, "title")
+		gt.Equal(t, fields[1].Name, "embedding")
+		gt.NotEqual(t, fields[1].VectorConfig, nil)
+		gt.Equal(t, fields[1].VectorConfig.Dimension, 768)
 	})
 
 	t.Run("Normal: handle array config", func(t *testing.T) {
@@ -250,12 +251,26 @@ func TestImport_Execute(t *testing.T) {
 	})
 
 	t.Run("Normal: empty collection list", func(t *testing.T) {
-		mockClient := &mock.FirestoreClientMock{}
+		mockClient := &mock.FirestoreClientMock{
+			ListCollectionsFunc: func(ctx context.Context) ([]string, error) {
+				return []string{"users", "posts"}, nil
+			},
+			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
+				return []interfaces.FirestoreIndex{}, nil
+			},
+			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
+				return "", nil
+			},
+			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
+				return nil, nil
+			},
+		}
 
 		imp := usecase.NewImport(mockClient, logger)
-		_, err := imp.Execute(ctx, []string{})
+		config, err := imp.Execute(ctx, []string{})
 
-		gt.Error(t, err).Contains("no collections specified")
+		gt.NoError(t, err)
+		gt.Equal(t, len(config.Collections), 2) // Should discover users and posts
 	})
 
 	t.Run("Normal: deduplicate indexes with same key", func(t *testing.T) {

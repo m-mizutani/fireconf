@@ -1,0 +1,55 @@
+collections:
+- name: alerts
+  indexes:
+  - fields:
+    - path: Embedding
+      order: ASCENDING
+      vectorConfig:
+        dimension: 256
+    queryScope: COLLECTION
+  - fields:
+    - path: CreatedAt
+      order: DESCENDING
+    - path: Embedding
+      order: ASCENDING
+      vectorConfig:
+        dimension: 256
+    queryScope: COLLECTION
+- name: lists
+  indexes:
+  - fields:
+    - path: Embedding
+      order: ASCENDING
+      vectorConfig:
+        dimension: 256
+    queryScope: COLLECTION
+  - fields:
+    - path: CreatedAt
+      order: DESCENDING
+    - path: Embedding
+      order: ASCENDING
+      vectorConfig:
+        dimension: 256
+    queryScope: COLLECTION
+- name: tickets
+  indexes:
+  - fields:
+    - path: Embedding
+      order: ASCENDING
+      vectorConfig:
+        dimension: 256
+    queryScope: COLLECTION
+  - fields:
+    - path: CreatedAt
+      order: DESCENDING
+    - path: Embedding
+      order: ASCENDING
+      vectorConfig:
+        dimension: 256
+    queryScope: COLLECTION
+  - fields:
+    - path: Status
+      order: ASCENDING
+    - path: CreatedAt
+      order: DESCENDING
+    queryScope: COLLECTION

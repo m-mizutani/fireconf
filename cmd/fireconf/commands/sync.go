@@ -73,7 +73,7 @@ func runSync(ctx context.Context, c *cli.Command) error {
 	if err != nil {
 		return goerr.Wrap(err, "failed to create client")
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Execute migration
 	if c.Bool("dry-run") {

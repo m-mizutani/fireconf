@@ -141,14 +141,15 @@ func (c *Client) GetMigrationPlan(ctx context.Context, config *Config) (*Migrati
 				})
 			}
 
-			if colDiff.TTLAction == ActionAdd {
+			switch colDiff.TTLAction {
+			case ActionAdd:
 				plan.Steps = append(plan.Steps, MigrationStep{
 					Collection:  colDiff.Name,
 					Operation:   "ENABLE_TTL",
 					Description: fmt.Sprintf("Enable TTL on field %s for collection %s", colDiff.TTL.Field, colDiff.Name),
 					Destructive: false,
 				})
-			} else if colDiff.TTLAction == ActionDelete {
+			case ActionDelete:
 				plan.Steps = append(plan.Steps, MigrationStep{
 					Collection:  colDiff.Name,
 					Operation:   "DISABLE_TTL",
