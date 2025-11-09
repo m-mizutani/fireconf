@@ -24,29 +24,28 @@ func TestE2E_FullCycle(t *testing.T) {
 		t.Skip("TEST_FIRECONF_PROJECT and TEST_FIRECONF_DATABASE must be set for E2E tests")
 	}
 
-	ctx := context.Background()
-	logger := slog.Default()
-
-	// Create Firestore client
-	authConfig := firestore.AuthConfig{
-		ProjectID:  projectID,
-		DatabaseID: databaseID,
-	}
-
-	client, err := firestore.NewClient(ctx, authConfig)
-	gt.NoError(t, err)
-	defer func() { _ = client.Close() }()
-
-	// Test collection name with timestamp to avoid conflicts
-	testCollectionName := fmt.Sprintf("fireconf_e2e_test_%d", time.Now().Unix())
-
 	t.Run("Full E2E cycle", func(t *testing.T) {
+		ctx := context.Background()
+		logger := slog.Default()
+
+		// Create Firestore client
+		authConfig := firestore.AuthConfig{
+			ProjectID:  projectID,
+			DatabaseID: databaseID,
+		}
+
+		client, err := firestore.NewClient(ctx, authConfig)
+		gt.NoError(t, err)
+		defer func() { _ = client.Close() }()
+
+		// Test collection name with timestamp to avoid conflicts
+		testCollectionName := fmt.Sprintf("fireconf_e2e_test_%d", time.Now().UnixNano())
 		// Step 1: Load test configuration from embedded file
 		// Replace placeholder with actual test collection name
 		testYAML := strings.ReplaceAll(usecase.TestDataE2ESimple, "__TEST_COLLECTION__", testCollectionName)
 
 		var originalConfig model.Config
-		err := yaml.Unmarshal([]byte(testYAML), &originalConfig)
+		err = yaml.Unmarshal([]byte(testYAML), &originalConfig)
 		gt.NoError(t, err)
 
 		// Step 2: Delete all existing indexes for the test collection
@@ -152,19 +151,6 @@ func TestE2E_WithTestData(t *testing.T) {
 		t.Skip("TEST_FIRECONF_PROJECT and TEST_FIRECONF_DATABASE must be set for E2E tests")
 	}
 
-	ctx := context.Background()
-	logger := slog.Default()
-
-	// Create Firestore client
-	authConfig := firestore.AuthConfig{
-		ProjectID:  projectID,
-		DatabaseID: databaseID,
-	}
-
-	client, err := firestore.NewClient(ctx, authConfig)
-	gt.NoError(t, err)
-	defer func() { _ = client.Close() }()
-
 	testCases := []struct {
 		name     string
 		testData string
@@ -184,14 +170,27 @@ func TestE2E_WithTestData(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			logger := slog.Default()
+
+			// Create Firestore client for this test
+			authConfig := firestore.AuthConfig{
+				ProjectID:  projectID,
+				DatabaseID: databaseID,
+			}
+
+			client, err := firestore.NewClient(ctx, authConfig)
+			gt.NoError(t, err)
+			defer func() { _ = client.Close() }()
 			// Parse test data
 			var config model.Config
-			err := yaml.Unmarshal([]byte(tc.testData), &config)
+			err = yaml.Unmarshal([]byte(tc.testData), &config)
 			gt.NoError(t, err)
 
 			// Add timestamp to collection names to avoid conflicts
-			timestamp := time.Now().Unix()
+			timestamp := time.Now().UnixNano()
 			for i := range config.Collections {
 				config.Collections[i].Name = fmt.Sprintf("%s_e2e_%d", config.Collections[i].Name, timestamp)
 			}

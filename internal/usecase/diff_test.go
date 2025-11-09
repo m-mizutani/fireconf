@@ -203,8 +203,52 @@ func TestDiffIndexes(t *testing.T) {
 		toCreate, toDelete := usecase.DiffIndexes(desired, existing)
 		gt.Equal(t, len(toCreate), 1)
 		gt.Equal(t, len(toDelete), 1)
-		gt.Equal(t, toCreate[0].Fields[1].FieldPath, "__name__")
-		gt.Equal(t, toCreate[0].Fields[1].Order, "DESCENDING")
+
+		// Find __name__ field dynamically
+		var nameField *interfaces.FirestoreIndexField
+		for i := range toCreate[0].Fields {
+			if toCreate[0].Fields[i].FieldPath == "__name__" {
+				nameField = &toCreate[0].Fields[i]
+				break
+			}
+		}
+		if nameField == nil {
+			t.Fatal("expected to find __name__ field in toCreate")
+		}
+		gt.Equal(t, nameField.Order, "DESCENDING")
+	})
+
+	t.Run("Detect field order difference", func(t *testing.T) {
+		// Index on (email, createdAt) is different from (createdAt, email)
+		desired := []model.Index{
+			{
+				Fields: []model.IndexField{
+					{Name: "email", Order: "ASCENDING"},
+					{Name: "createdAt", Order: "DESCENDING"},
+				},
+				QueryScope: "COLLECTION",
+			},
+		}
+
+		existing := []interfaces.FirestoreIndex{
+			{
+				Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
+				Fields: []interfaces.FirestoreIndexField{
+					{FieldPath: "createdAt", Order: "DESCENDING"},
+					{FieldPath: "email", Order: "ASCENDING"},
+				},
+				QueryScope: "COLLECTION",
+			},
+		}
+
+		toCreate, toDelete := usecase.DiffIndexes(desired, existing)
+		gt.Equal(t, len(toCreate), 1)
+		gt.Equal(t, len(toDelete), 1)
+
+		// Verify field order is preserved: email should come before createdAt
+		gt.Equal(t, len(toCreate[0].Fields), 2)
+		gt.Equal(t, toCreate[0].Fields[0].FieldPath, "email")
+		gt.Equal(t, toCreate[0].Fields[1].FieldPath, "createdAt")
 	})
 }
 

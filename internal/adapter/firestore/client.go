@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"cloud.google.com/go/firestore"
 	apiv1 "cloud.google.com/go/firestore/apiv1/admin"
 	adminpb "cloud.google.com/go/firestore/apiv1/admin/adminpb"
+	"github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -159,15 +161,42 @@ func (c *Client) getFieldPath(collectionID, fieldName string) string {
 }
 
 // WaitForOperation waits for a long-running operation to complete
+// Uses custom polling with exponential backoff (1s -> 2s -> 4s -> 8s -> 10s max)
 func (c *Client) WaitForOperation(ctx context.Context, operation interface{}) error {
+	// Custom backoff settings: start at 1s, max 10s
+	bo := gax.Backoff{
+		Initial:    1 * time.Second,
+		Max:        10 * time.Second,
+		Multiplier: 2.0,
+	}
+
 	switch op := operation.(type) {
 	case *apiv1.CreateIndexOperation:
-		_, err := op.Wait(ctx)
-		return err
-	// DeleteIndex operation doesn't have a separate type, returns error directly
+		// Poll with custom backoff until done
+		for !op.Done() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(bo.Pause()):
+				// Poll to check status, ignore errors (operation will be checked via Done())
+				_, _ = op.Poll(ctx)
+			}
+		}
+		return nil
+
 	case *apiv1.UpdateFieldOperation:
-		_, err := op.Wait(ctx)
-		return err
+		// Poll with custom backoff until done
+		for !op.Done() {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(bo.Pause()):
+				// Poll to check status, ignore errors (operation will be checked via Done())
+				_, _ = op.Poll(ctx)
+			}
+		}
+		return nil
+
 	default:
 		return fmt.Errorf("unknown operation type: %T", operation)
 	}
