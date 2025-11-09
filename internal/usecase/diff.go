@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/m-mizutani/fireconf/internal/interfaces"
@@ -65,20 +64,17 @@ func DiffTTL(desired *model.TTL, existing *interfaces.FirestoreTTL) (needsUpdate
 }
 
 // getIndexKey generates a unique key for an index based on its fields and scope
+// Field order is significant for composite indexes, so we preserve it
 func getIndexKey(idx interfaces.FirestoreIndex) string {
 	var parts []string
 
 	// Add query scope
 	parts = append(parts, idx.QueryScope)
 
-	// Sort fields to ensure consistent key generation
+	// Preserve field order - it's significant for composite indexes
+	// An index on (fieldA, fieldB) is different from (fieldB, fieldA)
 	fieldKeys := make([]string, 0, len(idx.Fields))
 	for _, field := range idx.Fields {
-		// Skip __name__ field as it's automatically added by Firestore
-		if field.FieldPath == "__name__" {
-			continue
-		}
-
 		var fieldKey string
 		if field.Order != "" {
 			fieldKey = fmt.Sprintf("%s:%s", field.FieldPath, field.Order)
@@ -90,8 +86,7 @@ func getIndexKey(idx interfaces.FirestoreIndex) string {
 		fieldKeys = append(fieldKeys, fieldKey)
 	}
 
-	// Sort field keys for consistent comparison
-	sort.Strings(fieldKeys)
+	// Do NOT sort - field order matters for composite indexes
 	parts = append(parts, fieldKeys...)
 
 	return strings.Join(parts, "|")
