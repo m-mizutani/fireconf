@@ -169,6 +169,43 @@ func TestDiffIndexes(t *testing.T) {
 		gt.Equal(t, len(toDelete), 1)
 		gt.Equal(t, toCreate[0].QueryScope, "COLLECTION_GROUP")
 	})
+
+	t.Run("Detect __name__ order difference", func(t *testing.T) {
+		desired := []model.Index{
+			{
+				Fields: []model.IndexField{
+					{Name: "CreatedAt", Order: "DESCENDING"},
+					{Name: "__name__", Order: "DESCENDING"},
+					{
+						Name:         "Embedding",
+						VectorConfig: &model.VectorConfig{Dimension: 256},
+					},
+				},
+				QueryScope: "COLLECTION",
+			},
+		}
+
+		existing := []interfaces.FirestoreIndex{
+			{
+				Name: "projects/test/databases/test/collectionGroups/tickets/indexes/idx1",
+				Fields: []interfaces.FirestoreIndexField{
+					{FieldPath: "CreatedAt", Order: "DESCENDING"},
+					{FieldPath: "__name__", Order: "ASCENDING"},
+					{
+						FieldPath:    "Embedding",
+						VectorConfig: &interfaces.FirestoreVectorConfig{Dimension: 256},
+					},
+				},
+				QueryScope: "COLLECTION",
+			},
+		}
+
+		toCreate, toDelete := usecase.DiffIndexes(desired, existing)
+		gt.Equal(t, len(toCreate), 1)
+		gt.Equal(t, len(toDelete), 1)
+		gt.Equal(t, toCreate[0].Fields[1].FieldPath, "__name__")
+		gt.Equal(t, toCreate[0].Fields[1].Order, "DESCENDING")
+	})
 }
 
 func TestDiffTTL(t *testing.T) {

@@ -74,11 +74,6 @@ func getIndexKey(idx interfaces.FirestoreIndex) string {
 	// Sort fields to ensure consistent key generation
 	fieldKeys := make([]string, 0, len(idx.Fields))
 	for _, field := range idx.Fields {
-		// Skip __name__ field as it's automatically added by Firestore
-		if field.FieldPath == "__name__" {
-			continue
-		}
-
 		var fieldKey string
 		if field.Order != "" {
 			fieldKey = fmt.Sprintf("%s:%s", field.FieldPath, field.Order)
