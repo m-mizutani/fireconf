@@ -76,7 +76,7 @@ func NewConfig() *Config {
 
 // LoadConfigFromYAML loads configuration from a YAML file
 func LoadConfigFromYAML(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 - path is provided by user as CLI argument
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to read config file")
 	}
@@ -96,6 +96,7 @@ func (c *Config) SaveToYAML(path string) error {
 		return goerr.Wrap(err, "failed to marshal config to YAML")
 	}
 
+	// #nosec G306 - YAML config files should be readable by others
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return goerr.Wrap(err, "failed to write config file")
 	}
