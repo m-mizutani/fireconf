@@ -178,10 +178,23 @@ func (c *Client) WaitForOperation(ctx context.Context, operation interface{}) er
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(bo.Pause()):
-				// Poll to check status, ignore errors (operation will be checked via Done())
-				_, _ = op.Poll(ctx)
+				// Poll to check status
+				// According to docs:
+				// - If Poll fails, error is returned and op is unmodified (retry)
+				// - If Poll succeeds but operation failed, error is returned and op.Done becomes true (exit loop and return error)
+				// - If Poll succeeds and operation is in progress, both response and error are nil (continue loop)
+				// - If Poll succeeds and operation completed successfully, op.Done is true and response is returned (exit loop)
+				_, err := op.Poll(ctx)
+				if err != nil {
+					// If operation is now done, it means the operation failed
+					if op.Done() {
+						return fmt.Errorf("index creation operation failed: %w", err)
+					}
+					// Otherwise, it's a transient error (network, etc), continue polling
+				}
 			}
 		}
+		// Operation completed successfully
 		return nil
 
 	case *apiv1.UpdateFieldOperation:
@@ -191,10 +204,18 @@ func (c *Client) WaitForOperation(ctx context.Context, operation interface{}) er
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(bo.Pause()):
-				// Poll to check status, ignore errors (operation will be checked via Done())
-				_, _ = op.Poll(ctx)
+				// Poll to check status
+				_, err := op.Poll(ctx)
+				if err != nil {
+					// If operation is now done, it means the operation failed
+					if op.Done() {
+						return fmt.Errorf("field update operation failed: %w", err)
+					}
+					// Otherwise, it's a transient error (network, etc), continue polling
+				}
 			}
 		}
+		// Operation completed successfully
 		return nil
 
 	default:
