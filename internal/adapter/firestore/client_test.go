@@ -12,15 +12,15 @@ import (
 
 // mockCreateIndexOperation is a mock implementation of CreateIndexOperation for testing
 type mockCreateIndexOperation struct {
-	done        bool
-	pollError   error
-	pollResult  *adminpb.Index
-	pollCount   int
-	waitError   error
-	waitResult  *adminpb.Index
-	doneCalls   int
-	shouldFail  bool
-	failAtPoll  int // Fail at specific poll count (0 means never fail via poll)
+	done       bool
+	pollError  error
+	pollResult *adminpb.Index
+	pollCount  int
+	waitError  error
+	waitResult *adminpb.Index
+	doneCalls  int
+	shouldFail bool
+	failAtPoll int // Fail at specific poll count (0 means never fail via poll)
 }
 
 func (m *mockCreateIndexOperation) Done() bool {

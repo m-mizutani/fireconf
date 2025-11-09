@@ -92,6 +92,7 @@ func runImport(ctx context.Context, c *cli.Command) error {
 		fmt.Println(string(data))
 	} else {
 		outputPath := c.String("output")
+		// #nosec G306 - YAML config files should be readable by others
 		if err := os.WriteFile(outputPath, data, 0644); err != nil {
 			return goerr.Wrap(err, "failed to write output file")
 		}

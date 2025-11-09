@@ -131,9 +131,15 @@ func convertIndexToAPI(index interfaces.FirestoreIndex) *adminpb.Index {
 		// Set field type based on what's specified
 		// Vector config takes priority over order/array config
 		if field.VectorConfig != nil {
+			// Validate dimension to prevent integer overflow
+			// Firestore vector dimensions are typically small (e.g., 128, 256, 768, 1536)
+			if field.VectorConfig.Dimension < 0 || field.VectorConfig.Dimension > 2147483647 {
+				// This should never happen with valid vector configs, but check anyway
+				continue
+			}
 			apiField.ValueMode = &adminpb.Index_IndexField_VectorConfig_{
 				VectorConfig: &adminpb.Index_IndexField_VectorConfig{
-					Dimension: int32(field.VectorConfig.Dimension),
+					Dimension: int32(field.VectorConfig.Dimension), // #nosec G115 - validated above
 					Type: &adminpb.Index_IndexField_VectorConfig_Flat{
 						Flat: &adminpb.Index_IndexField_VectorConfig_FlatIndex{},
 					},
