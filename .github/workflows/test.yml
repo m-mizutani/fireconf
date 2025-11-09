@@ -11,12 +11,8 @@ permissions:
 
 jobs:
   test:
-    name: Test with Go ${{ matrix.go-version }}
+    name: Test
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        go-version: ['1.21', '1.22']
 
     steps:
       - name: Checkout code
@@ -25,7 +21,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: ${{ matrix.go-version }}
+          go-version: '1.24'
           cache: true
 
       - name: Download dependencies
@@ -35,7 +31,6 @@ jobs:
         run: go test ./... -v -race -coverprofile=coverage.out
 
       - name: Upload coverage report
-        if: matrix.go-version == '1.22'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
