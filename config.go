@@ -67,13 +67,6 @@ const (
 	QueryScopeCollectionGroup QueryScope = "COLLECTION_GROUP"
 )
 
-// NewConfig creates a new configuration
-func NewConfig() *Config {
-	return &Config{
-		Collections: []Collection{},
-	}
-}
-
 // LoadConfigFromYAML loads configuration from a YAML file
 func LoadConfigFromYAML(path string) (*Config, error) {
 	data, err := os.ReadFile(path) // #nosec G304 - path is provided by user as CLI argument

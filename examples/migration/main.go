@@ -12,7 +12,7 @@ func main() {
 	ctx := context.Background()
 
 	// Example: Migrating from YAML-based configuration to programmatic configuration
-	
+
 	// Step 1: Load existing YAML configuration
 	log.Println("Loading existing YAML configuration...")
 	yamlConfig, err := fireconf.LoadConfigFromYAML("legacy-fireconf.yaml")
@@ -22,8 +22,8 @@ func main() {
 		yamlConfig = createSampleConfig()
 	}
 
-	// Step 2: Create client
-	client, err := fireconf.NewClient(ctx, "my-project", "(default)")
+	// Step 2: Create client with desired configuration
+	client, err := fireconf.New(ctx, "my-project", "(default)", yamlConfig)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,7 +38,10 @@ func main() {
 
 	// Step 4: Compare configurations
 	log.Println("Comparing configurations...")
-	diff := client.DiffConfigs(currentConfig, yamlConfig)
+	diff, err := client.DiffConfigs(currentConfig)
+	if err != nil {
+		log.Fatalf("Failed to diff configurations: %v", err)
+	}
 
 	// Display differences
 	if len(diff.Collections) == 0 {
@@ -49,7 +52,7 @@ func main() {
 	log.Printf("Found %d collection differences:", len(diff.Collections))
 	for _, colDiff := range diff.Collections {
 		fmt.Printf("Collection: %s (Action: %s)\n", colDiff.Name, colDiff.Action)
-		
+
 		if len(colDiff.IndexesToAdd) > 0 {
 			fmt.Printf("  Indexes to add: %d\n", len(colDiff.IndexesToAdd))
 		}
@@ -63,7 +66,7 @@ func main() {
 
 	// Step 5: Apply migration
 	log.Println("Applying migration...")
-	if err := client.Migrate(ctx, yamlConfig); err != nil {
+	if err := client.Migrate(ctx); err != nil {
 		log.Fatalf("Migration failed: %v", err)
 	}
 
@@ -75,7 +78,10 @@ func main() {
 	}
 
 	// Check if configurations match
-	finalDiff := client.DiffConfigs(updatedConfig, yamlConfig)
+	finalDiff, err := client.DiffConfigs(updatedConfig)
+	if err != nil {
+		log.Fatalf("Failed to diff configurations: %v", err)
+	}
 	if len(finalDiff.Collections) == 0 {
 		log.Println("Migration completed successfully! Configurations match.")
 	} else {

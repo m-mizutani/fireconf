@@ -15,7 +15,7 @@ Firestore index and TTL configuration management tool and Go library
 - **Import Command**: Export existing Firestore configuration to YAML
 - **Dry Run Mode**: Preview changes before applying them
 - **Idempotent Operations**: Safe to run multiple times
-- **Migration Planning**: Get detailed migration plans before execution
+- **Index Ready Wait**: Waits for indexes to reach READY state before returning
 
 ## Installation
 
@@ -48,13 +48,6 @@ import (
 func main() {
     ctx := context.Background()
 
-    // Create a new fireconf client
-    client, err := fireconf.NewClient(ctx, "my-project", "(default)")
-    if err != nil {
-        log.Fatal(err)
-    }
-    defer client.Close()
-
     // Define configuration programmatically
     config := &fireconf.Config{
         Collections: []fireconf.Collection{
@@ -75,8 +68,15 @@ func main() {
         },
     }
 
+    // Create a new fireconf client with configuration
+    client, err := fireconf.New(ctx, "my-project", "(default)", config)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer client.Close()
+
     // Apply configuration to Firestore
-    if err := client.Migrate(ctx, config); err != nil {
+    if err := client.Migrate(ctx); err != nil {
         log.Fatal(err)
     }
 }
@@ -91,8 +91,15 @@ if err != nil {
     log.Fatal(err)
 }
 
+// Create client with configuration
+client, err := fireconf.New(ctx, "my-project", "(default)", config)
+if err != nil {
+    log.Fatal(err)
+}
+defer client.Close()
+
 // Apply to Firestore
-if err := client.Migrate(ctx, config); err != nil {
+if err := client.Migrate(ctx); err != nil {
     log.Fatal(err)
 }
 ```
@@ -100,6 +107,13 @@ if err := client.Migrate(ctx, config); err != nil {
 ### Importing Existing Configuration
 
 ```go
+// Create client (config can be nil for import-only use)
+client, err := fireconf.New(ctx, "my-project", "(default)", nil)
+if err != nil {
+    log.Fatal(err)
+}
+defer client.Close()
+
 // Import current configuration from Firestore
 config, err := client.Import(ctx, "users", "posts")
 if err != nil {
@@ -112,28 +126,54 @@ if err := config.SaveToYAML("fireconf.yaml"); err != nil {
 }
 ```
 
+### Comparing Configurations
+
+```go
+// Import current state from Firestore
+current, err := client.Import(ctx)
+if err != nil {
+    log.Fatal(err)
+}
+
+// Compare current vs desired (desired is set via New)
+diff, err := client.DiffConfigs(current)
+if err != nil {
+    log.Fatal(err)
+}
+
+for _, colDiff := range diff.Collections {
+    fmt.Printf("Collection: %s (Action: %s)\n", colDiff.Name, colDiff.Action)
+}
+```
+
 ### Advanced Options
 
 ```go
-client, err := fireconf.NewClient(ctx, "my-project", "custom-db",
+client, err := fireconf.New(ctx, "my-project", "custom-db", config,
     fireconf.WithLogger(logger),
     fireconf.WithCredentialsFile("service-account.json"),
     fireconf.WithDryRun(true),
 )
 ```
 
-### Migration Planning
+### Error Handling
+
+`Migrate` returns `*MigrationError` on failure, `DiffConfigs` returns `*DiffError` on invalid input, and `Validate` returns `*ValidationError` for configuration issues. Use `errors.As` to inspect them:
 
 ```go
-// Get migration plan without executing
-plan, err := client.GetMigrationPlan(ctx, config)
-if err != nil {
-    log.Fatal(err)
+var migErr *fireconf.MigrationError
+if errors.As(err, &migErr) {
+    fmt.Printf("Migration operation %q failed: %v\n", migErr.Operation, migErr.Cause)
 }
 
-for _, step := range plan.Steps {
-    fmt.Printf("Step: %s - %s (destructive: %v)\n", 
-        step.Operation, step.Description, step.Destructive)
+var diffErr *fireconf.DiffError
+if errors.As(err, &diffErr) {
+    fmt.Printf("Diff error details: %v\n", diffErr.Details)
+}
+
+var valErr *fireconf.ValidationError
+if errors.As(err, &valErr) {
+    fmt.Printf("Validation error in field %q: %s\n", valErr.Field, valErr.Message)
 }
 ```
 
@@ -152,7 +192,6 @@ Options:
 - `--database`, `-d`: Firestore database ID (required)
 - `--config`, `-c`: Configuration file path (default: "fireconf.yaml")
 - `--dry-run`: Show what would be changed without making actual changes
-- `--verbose`, `-v`: Enable verbose logging
 
 ### Import Configuration
 
@@ -273,6 +312,7 @@ For detailed API documentation, see the [Go package documentation](https://pkg.g
 ## Notes
 
 - Index creation/deletion can take several minutes to complete
+- `Migrate` waits for all indexes to reach READY state before returning
 - TTL policies are limited to one field per collection
 - TTL field indexing is automatically disabled to prevent hotspots
 - Firestore Admin API operations bypass Firestore Security Rules

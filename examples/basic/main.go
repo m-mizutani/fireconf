@@ -10,13 +10,6 @@ import (
 func main() {
 	ctx := context.Background()
 
-	// Create a new fireconf client
-	client, err := fireconf.NewClient(ctx, "my-project", "(default)")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer client.Close()
-
 	// Define configuration programmatically
 	config := &fireconf.Config{
 		Collections: []fireconf.Collection{
@@ -55,9 +48,16 @@ func main() {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
 
+	// Create a new fireconf client with configuration
+	client, err := fireconf.New(ctx, "my-project", "(default)", config)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
 	// Apply configuration to Firestore
 	log.Println("Applying configuration to Firestore...")
-	if err := client.Migrate(ctx, config); err != nil {
+	if err := client.Migrate(ctx); err != nil {
 		log.Fatalf("Migration failed: %v", err)
 	}
 
