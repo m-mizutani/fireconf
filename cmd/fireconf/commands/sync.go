@@ -69,33 +69,20 @@ func runSync(ctx context.Context, c *cli.Command) error {
 		opts = append(opts, fireconf.WithCredentialsFile(credentials))
 	}
 
-	client, err := fireconf.NewClient(ctx, projectID, databaseID, opts...)
+	client, err := fireconf.New(ctx, projectID, databaseID, config, opts...)
 	if err != nil {
 		return goerr.Wrap(err, "failed to create client")
 	}
 	defer func() { _ = client.Close() }()
 
-	// Execute migration
+	// Execute migration (dry-run logging is handled by WithDryRun option)
 	if c.Bool("dry-run") {
 		logger.Info("Running in dry-run mode")
-		plan, err := client.GetMigrationPlan(ctx, config)
-		if err != nil {
-			return goerr.Wrap(err, "failed to get migration plan")
-		}
-
-		// Display plan
-		for _, step := range plan.Steps {
-			logger.Info("Would execute",
-				"collection", step.Collection,
-				"operation", step.Operation,
-				"description", step.Description,
-				"destructive", step.Destructive)
-		}
-	} else {
-		logger.Info("Applying configuration to Firestore")
-		if err := client.Migrate(ctx, config); err != nil {
-			return goerr.Wrap(err, "migration failed")
-		}
+	}
+	if err := client.Migrate(ctx); err != nil {
+		return goerr.Wrap(err, "migration failed")
+	}
+	if !c.Bool("dry-run") {
 		logger.Info("Configuration applied successfully")
 	}
 

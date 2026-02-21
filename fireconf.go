@@ -15,12 +15,13 @@ import (
 type Client struct {
 	projectID string
 	client    interfaces.FirestoreClient
-	options   *Options
+	config    *Config
+	options   *options
 	logger    *slog.Logger
 }
 
-// NewClient creates a new fireconf client
-func NewClient(ctx context.Context, projectID, databaseID string, opts ...Option) (*Client, error) {
+// New creates a new fireconf client with the desired configuration
+func New(ctx context.Context, projectID, databaseID string, config *Config, opts ...Option) (*Client, error) {
 	options := applyOptions(opts)
 
 	// Validate required parameters
@@ -32,13 +33,13 @@ func NewClient(ctx context.Context, projectID, databaseID string, opts ...Option
 	}
 
 	// Create Firestore client
-	config := firestore.AuthConfig{
+	authConfig := firestore.AuthConfig{
 		ProjectID:   projectID,
 		DatabaseID:  databaseID,
 		Credentials: options.CredentialsFile,
 	}
 
-	firestoreClient, err := firestore.NewClient(ctx, config)
+	firestoreClient, err := firestore.NewClient(ctx, authConfig)
 	if err != nil {
 		return nil, goerr.Wrap(err, "failed to create Firestore client")
 	}
@@ -46,6 +47,7 @@ func NewClient(ctx context.Context, projectID, databaseID string, opts ...Option
 	return &Client{
 		projectID: projectID,
 		client:    firestoreClient,
+		config:    config,
 		options:   options,
 		logger:    options.Logger,
 	}, nil
@@ -59,22 +61,30 @@ func (c *Client) Close() error {
 	return nil
 }
 
-// Migrate applies configuration to Firestore
-func (c *Client) Migrate(ctx context.Context, config *Config) error {
+// Migrate applies the configuration to Firestore
+func (c *Client) Migrate(ctx context.Context) error {
+	if c.config == nil {
+		return goerr.New("config is required for Migrate; pass it to New()")
+	}
+
 	// Validate configuration
-	if err := config.Validate(); err != nil {
+	if err := c.config.Validate(); err != nil {
 		return goerr.Wrap(err, "invalid configuration")
 	}
 
 	// Convert to internal model
-	internalConfig := convertToInternalConfig(config)
+	internalConfig := convertToInternalConfig(c.config)
 
 	// Create sync use case
-	sync := usecase.NewSync(c.client, c.logger, c.options.DryRun)
+	syncOpts := []usecase.SyncOption{}
+	if c.options.DryRun {
+		syncOpts = append(syncOpts, usecase.SyncWithDryRun())
+	}
+	sync := usecase.NewSync(c.client, c.logger, syncOpts...)
 
 	// Execute sync
 	if err := sync.Execute(ctx, internalConfig); err != nil {
-		return goerr.Wrap(err, "migration failed")
+		return &MigrationError{Operation: "migrate", Cause: err}
 	}
 
 	return nil
@@ -96,9 +106,16 @@ func (c *Client) Import(ctx context.Context, collections ...string) (*Config, er
 	return config, nil
 }
 
-// DiffConfigs compares two configurations without accessing Firestore
-func (c *Client) DiffConfigs(current, desired *Config) *DiffResult {
+// DiffConfigs compares the current configuration against the desired configuration set in New
+func (c *Client) DiffConfigs(current *Config) (*DiffResult, error) {
+	if current == nil {
+		return nil, &DiffError{Details: []string{"current config is nil"}}
+	}
 	currentInternal := convertToInternalConfig(current)
+	desired := c.config
+	if desired == nil {
+		desired = &Config{}
+	}
 	desiredInternal := convertToInternalConfig(desired)
 
 	result := &DiffResult{
@@ -173,7 +190,7 @@ func (c *Client) DiffConfigs(current, desired *Config) *DiffResult {
 		}
 	}
 
-	return result
+	return result, nil
 }
 
 // DiffResult represents the difference between configurations

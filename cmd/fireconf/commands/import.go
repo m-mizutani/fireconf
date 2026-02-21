@@ -61,7 +61,7 @@ func runImport(ctx context.Context, c *cli.Command) error {
 		opts = append(opts, fireconf.WithCredentialsFile(credentials))
 	}
 
-	client, err := fireconf.NewClient(ctx, projectID, databaseID, opts...)
+	client, err := fireconf.New(ctx, projectID, databaseID, nil, opts...)
 	if err != nil {
 		return goerr.Wrap(err, "failed to create client")
 	}

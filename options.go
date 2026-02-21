@@ -2,8 +2,8 @@ package fireconf
 
 import "log/slog"
 
-// Options represents client options
-type Options struct {
+// options represents client options
+type options struct {
 	// Logger for logging operations
 	Logger *slog.Logger
 
@@ -12,51 +12,41 @@ type Options struct {
 
 	// DryRun if true, shows what would be changed without actually applying
 	DryRun bool
-
-	// Verbose enables verbose logging
-	Verbose bool
 }
 
-// Option is a function that configures Options
-type Option func(*Options)
+// Option is a function that configures options
+type Option func(*options)
 
 // WithLogger sets the logger
 func WithLogger(logger *slog.Logger) Option {
-	return func(o *Options) {
+	return func(o *options) {
 		o.Logger = logger
 	}
 }
 
 // WithCredentialsFile sets the credentials file path
 func WithCredentialsFile(path string) Option {
-	return func(o *Options) {
+	return func(o *options) {
 		o.CredentialsFile = path
 	}
 }
 
 // WithDryRun enables dry run mode
 func WithDryRun(dryRun bool) Option {
-	return func(o *Options) {
+	return func(o *options) {
 		o.DryRun = dryRun
 	}
 }
 
-// WithVerbose enables verbose logging
-func WithVerbose(verbose bool) Option {
-	return func(o *Options) {
-		o.Verbose = verbose
-	}
-}
-
-// applyOptions applies option functions to Options
-func applyOptions(opts []Option) *Options {
-	options := &Options{
+// applyOptions applies option functions to options
+func applyOptions(opts []Option) *options {
+	o := &options{
 		Logger: slog.New(slog.DiscardHandler),
 	}
 
 	for _, opt := range opts {
-		opt(options)
+		opt(o)
 	}
 
-	return options
+	return o
 }

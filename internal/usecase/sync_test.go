@@ -19,13 +19,29 @@ func TestSync_Execute(t *testing.T) {
 
 	t.Run("Normal: sync indexes successfully", func(t *testing.T) {
 		// Setup mock
+		listCallCount := 0
 		mockClient := &mock.FirestoreClientMock{
 			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
 				return true, nil
 			},
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
-				// Return empty list - no existing indexes
-				return []interfaces.FirestoreIndex{}, nil
+				listCallCount++
+				if listCallCount == 1 {
+					// First call from syncIndexes: no existing indexes
+					return []interfaces.FirestoreIndex{}, nil
+				}
+				// Subsequent calls from waitForIndexesReady: return READY index
+				return []interfaces.FirestoreIndex{
+					{
+						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
+						Fields: []interfaces.FirestoreIndexField{
+							{FieldPath: "email", Order: "ASCENDING"},
+							{FieldPath: "createdAt", Order: "DESCENDING"},
+						},
+						QueryScope: "COLLECTION",
+						State:      "READY",
+					},
+				}, nil
 			},
 			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error) {
 				return nil, nil // No operation object in dry run
@@ -39,7 +55,7 @@ func TestSync_Execute(t *testing.T) {
 		}
 
 		// Create sync use case
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		// Create test config
 		config := &model.Config{
@@ -64,8 +80,9 @@ func TestSync_Execute(t *testing.T) {
 		gt.NoError(t, err)
 
 		// Verify calls
+		// ListIndexes is called once by syncIndexes and once more by waitForIndexesReady
 		gt.Equal(t, len(mockClient.CollectionExistsCalls()), 1)
-		gt.Equal(t, len(mockClient.ListIndexesCalls()), 1)
+		gt.True(t, len(mockClient.ListIndexesCalls()) >= 2)
 		gt.Equal(t, len(mockClient.CreateIndexCalls()), 1)
 		gt.Equal(t, mockClient.CreateIndexCalls()[0].CollectionID, "users")
 	})
@@ -89,7 +106,7 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -135,7 +152,7 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -169,7 +186,7 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -203,7 +220,7 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, true) // dry run = true
+		sync := usecase.NewSync(mockClient, logger, usecase.SyncWithDryRun())
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -231,7 +248,7 @@ func TestSync_Execute(t *testing.T) {
 	t.Run("Error: collection validation fails", func(t *testing.T) {
 		mockClient := &mock.FirestoreClientMock{}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -262,7 +279,7 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -296,7 +313,7 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -333,7 +350,7 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		sync := usecase.NewSync(mockClient, logger)
 
 		config := &model.Config{
 			Collections: []model.Collection{
@@ -349,6 +366,223 @@ func TestSync_Execute(t *testing.T) {
 
 		err := sync.Execute(ctx, config)
 		gt.Error(t, err).Contains("TTL field must be a timestamp")
+	})
+
+	t.Run("Normal: wait for externally CREATING index to become READY", func(t *testing.T) {
+		// Main bug scenario: an external process created an index that is in CREATING state.
+		// Migrate should detect it and wait until it becomes READY without calling CreateIndex.
+		callCount := 0
+		mockClient := &mock.FirestoreClientMock{
+			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
+				return true, nil
+			},
+			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
+				callCount++
+				state := "CREATING"
+				if callCount >= 2 {
+					// Second call (from waitForIndexesReady polling): return READY
+					state = "READY"
+				}
+				return []interfaces.FirestoreIndex{
+					{
+						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
+						Fields: []interfaces.FirestoreIndexField{
+							{FieldPath: "email", Order: "ASCENDING"},
+							{FieldPath: "createdAt", Order: "DESCENDING"},
+						},
+						QueryScope: "COLLECTION",
+						State:      state,
+					},
+				}, nil
+			},
+			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
+				return nil, nil
+			},
+			DisableTTLPolicyFunc: func(ctx context.Context, collectionID string) (interface{}, error) {
+				return nil, nil
+			},
+		}
+
+		sync := usecase.NewSync(mockClient, logger)
+
+		config := &model.Config{
+			Collections: []model.Collection{
+				{
+					Name: "users",
+					Indexes: []model.Index{
+						{
+							Fields: []model.IndexField{
+								{Name: "email", Order: "ASCENDING"},
+								{Name: "createdAt", Order: "DESCENDING"},
+							},
+							QueryScope: "COLLECTION",
+						},
+					},
+				},
+			},
+		}
+
+		err := sync.Execute(ctx, config)
+		gt.NoError(t, err)
+
+		// CreateIndex must NOT be called because the index already exists (CREATING state)
+		gt.Equal(t, len(mockClient.CreateIndexCalls()), 0)
+		// ListIndexes called at least twice: once in syncIndexes, once in waitForIndexesReady
+		gt.True(t, len(mockClient.ListIndexesCalls()) >= 2)
+	})
+
+	t.Run("Normal: index starts READY, no extra polling needed", func(t *testing.T) {
+		mockClient := &mock.FirestoreClientMock{
+			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
+				return true, nil
+			},
+			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
+				return []interfaces.FirestoreIndex{
+					{
+						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
+						Fields: []interfaces.FirestoreIndexField{
+							{FieldPath: "email", Order: "ASCENDING"},
+						},
+						QueryScope: "COLLECTION",
+						State:      "READY",
+					},
+				}, nil
+			},
+			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
+				return nil, nil
+			},
+			DisableTTLPolicyFunc: func(ctx context.Context, collectionID string) (interface{}, error) {
+				return nil, nil
+			},
+		}
+
+		sync := usecase.NewSync(mockClient, logger)
+
+		config := &model.Config{
+			Collections: []model.Collection{
+				{
+					Name: "users",
+					Indexes: []model.Index{
+						{
+							Fields: []model.IndexField{
+								{Name: "email", Order: "ASCENDING"},
+							},
+							QueryScope: "COLLECTION",
+						},
+					},
+				},
+			},
+		}
+
+		err := sync.Execute(ctx, config)
+		gt.NoError(t, err)
+
+		gt.Equal(t, len(mockClient.CreateIndexCalls()), 0)
+	})
+
+	t.Run("Error: index enters ERROR state during wait", func(t *testing.T) {
+		callCount := 0
+		mockClient := &mock.FirestoreClientMock{
+			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
+				return true, nil
+			},
+			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
+				callCount++
+				state := "CREATING"
+				if callCount >= 2 {
+					state = "ERROR"
+				}
+				return []interfaces.FirestoreIndex{
+					{
+						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
+						Fields: []interfaces.FirestoreIndexField{
+							{FieldPath: "email", Order: "ASCENDING"},
+						},
+						QueryScope: "COLLECTION",
+						State:      state,
+					},
+				}, nil
+			},
+			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
+				return nil, nil
+			},
+			DisableTTLPolicyFunc: func(ctx context.Context, collectionID string) (interface{}, error) {
+				return nil, nil
+			},
+		}
+
+		sync := usecase.NewSync(mockClient, logger)
+
+		config := &model.Config{
+			Collections: []model.Collection{
+				{
+					Name: "users",
+					Indexes: []model.Index{
+						{
+							Fields: []model.IndexField{
+								{Name: "email", Order: "ASCENDING"},
+							},
+							QueryScope: "COLLECTION",
+						},
+					},
+				},
+			},
+		}
+
+		err := sync.Execute(ctx, config)
+		gt.Error(t, err).Contains("ERROR state")
+	})
+
+	t.Run("Normal: skipWait=true does not poll for READY state", func(t *testing.T) {
+		listCallCount := 0
+		mockClient := &mock.FirestoreClientMock{
+			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
+				return true, nil
+			},
+			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
+				listCallCount++
+				return []interfaces.FirestoreIndex{
+					{
+						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
+						Fields: []interfaces.FirestoreIndexField{
+							{FieldPath: "email", Order: "ASCENDING"},
+						},
+						QueryScope: "COLLECTION",
+						State:      "CREATING",
+					},
+				}, nil
+			},
+			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
+				return nil, nil
+			},
+			DisableTTLPolicyFunc: func(ctx context.Context, collectionID string) (interface{}, error) {
+				return nil, nil
+			},
+		}
+
+		sync := usecase.NewSync(mockClient, logger, usecase.SyncWithAsync()) // skipWait=true
+
+		config := &model.Config{
+			Collections: []model.Collection{
+				{
+					Name: "users",
+					Indexes: []model.Index{
+						{
+							Fields: []model.IndexField{
+								{Name: "email", Order: "ASCENDING"},
+							},
+							QueryScope: "COLLECTION",
+						},
+					},
+				},
+			},
+		}
+
+		err := sync.Execute(ctx, config)
+		gt.NoError(t, err)
+
+		// With skipWait=true, ListIndexes should only be called once (from syncIndexes, not from waitForIndexesReady)
+		gt.Equal(t, listCallCount, 1)
 	})
 
 	t.Run("Normal: sync with test data", func(t *testing.T) {
@@ -373,7 +607,8 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		sync := usecase.NewSync(mockClient, logger, false)
+		// skipWait=true: this test verifies operation counts, not wait behavior
+		sync := usecase.NewSync(mockClient, logger, usecase.SyncWithAsync())
 		config := LoadBasicTestConfig(t)
 
 		err := sync.Execute(ctx, config)

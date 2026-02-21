@@ -5,16 +5,9 @@
 //
 // # Basic Usage
 //
-// Create a client and migrate configuration:
+// Create a client with configuration and migrate:
 //
 //	ctx := context.Background()
-//
-//	// Create a new fireconf client
-//	client, err := fireconf.NewClient(ctx, "my-project")
-//	if err != nil {
-//	    log.Fatal(err)
-//	}
-//	defer client.Close()
 //
 //	// Define configuration
 //	config := &fireconf.Config{
@@ -36,8 +29,15 @@
 //	    },
 //	}
 //
-//	// Apply configuration to Firestore
-//	if err := client.Migrate(ctx, config); err != nil {
+//	// Create a new fireconf client with configuration
+//	client, err := fireconf.New(ctx, "my-project", "(default)", config)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	defer client.Close()
+//
+//	// Apply configuration to Firestore (waits for indexes to be READY)
+//	if err := client.Migrate(ctx); err != nil {
 //	    log.Fatal(err)
 //	}
 //
@@ -50,13 +50,24 @@
 //	    log.Fatal(err)
 //	}
 //
-//	if err := client.Migrate(ctx, config); err != nil {
+//	client, err := fireconf.New(ctx, "my-project", "(default)", config)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	if err := client.Migrate(ctx); err != nil {
 //	    log.Fatal(err)
 //	}
 //
 // # Importing Existing Configuration
 //
 // Import configuration from an existing Firestore database:
+//
+//	// config can be nil for import-only use
+//	client, err := fireconf.New(ctx, "my-project", "(default)", nil)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
 //
 //	config, err := client.Import(ctx, "users", "posts")
 //	if err != nil {
@@ -67,4 +78,37 @@
 //	if err := config.SaveToYAML("fireconf.yaml"); err != nil {
 //	    log.Fatal(err)
 //	}
+//
+// # Comparing Configurations
+//
+// Compare the current Firestore state against the desired configuration:
+//
+//	current, err := client.Import(ctx)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	diff, err := client.DiffConfigs(current)
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//
+//	for _, colDiff := range diff.Collections {
+//	    fmt.Printf("Collection: %s (Action: %s)\n", colDiff.Name, colDiff.Action)
+//	}
+//
+// # Error Handling
+//
+// The package defines structured error types that can be inspected using errors.As:
+//
+//   - [MigrationError]: returned by Migrate on sync failure
+//
+//   - [DiffError]: returned by DiffConfigs on invalid input
+//
+//   - [ValidationError]: returned by Config.Validate on configuration errors
+//
+//     var migErr *fireconf.MigrationError
+//     if errors.As(err, &migErr) {
+//     fmt.Printf("Migration operation %q failed: %v\n", migErr.Operation, migErr.Cause)
+//     }
 package fireconf

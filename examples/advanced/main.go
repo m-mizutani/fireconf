@@ -17,18 +17,6 @@ func main() {
 		Level: slog.LevelDebug,
 	}))
 
-	// Create client with options
-	client, err := fireconf.NewClient(ctx, "my-project", "custom-db",
-		fireconf.WithLogger(logger),
-		fireconf.WithCredentialsFile("service-account.json"),
-		fireconf.WithDryRun(false),
-		fireconf.WithVerbose(true),
-	)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer client.Close()
-
 	// Define advanced configuration with vector search
 	config := &fireconf.Config{
 		Collections: []fireconf.Collection{
@@ -63,28 +51,20 @@ func main() {
 		},
 	}
 
-	// Get migration plan first
-	logger.Info("Getting migration plan...")
-	plan, err := client.GetMigrationPlan(ctx, config)
+	// Create client with options and configuration
+	client, err := fireconf.New(ctx, "my-project", "custom-db", config,
+		fireconf.WithLogger(logger),
+		fireconf.WithCredentialsFile("service-account.json"),
+		fireconf.WithDryRun(false),
+	)
 	if err != nil {
-		log.Fatalf("Failed to get migration plan: %v", err)
+		log.Fatal(err)
 	}
-
-	// Display plan
-	logger.Info("Migration plan", "steps", len(plan.Steps))
-	for i, step := range plan.Steps {
-		logger.Info("Step",
-			"index", i+1,
-			"collection", step.Collection,
-			"operation", step.Operation,
-			"description", step.Description,
-			"destructive", step.Destructive,
-		)
-	}
+	defer client.Close()
 
 	// Apply migration
 	logger.Info("Applying migration...")
-	if err := client.Migrate(ctx, config); err != nil {
+	if err := client.Migrate(ctx); err != nil {
 		log.Fatalf("Migration failed: %v", err)
 	}
 
