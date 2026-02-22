@@ -11,6 +11,7 @@ import (
 
 	"github.com/goccy/go-yaml"
 	"github.com/m-mizutani/fireconf/internal/adapter/firestore"
+	"github.com/m-mizutani/fireconf/internal/interfaces"
 	"github.com/m-mizutani/fireconf/internal/model"
 	"github.com/m-mizutani/fireconf/internal/usecase"
 	"github.com/m-mizutani/gt"
@@ -23,6 +24,8 @@ func TestE2E_FullCycle(t *testing.T) {
 	if projectID == "" || databaseID == "" {
 		t.Skip("TEST_FIRECONF_PROJECT and TEST_FIRECONF_DATABASE must be set for E2E tests")
 	}
+
+	t.Parallel()
 
 	t.Run("Full E2E cycle", func(t *testing.T) {
 		ctx := context.Background()
@@ -151,6 +154,8 @@ func TestE2E_WithTestData(t *testing.T) {
 		t.Skip("TEST_FIRECONF_PROJECT and TEST_FIRECONF_DATABASE must be set for E2E tests")
 	}
 
+	t.Parallel()
+
 	testCases := []struct {
 		name     string
 		testData string
@@ -172,6 +177,8 @@ func TestE2E_WithTestData(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			ctx := context.Background()
 			logger := slog.Default()
 
@@ -224,6 +231,129 @@ func TestE2E_WithTestData(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestE2E_VectorIndexNameFieldBehavior verifies the actual Firestore API behavior
+// regarding __name__ in vector indexes. This confirms the assumption that our
+// validation logic is based on.
+func TestE2E_VectorIndexNameFieldBehavior(t *testing.T) {
+	projectID := os.Getenv("TEST_FIRECONF_PROJECT")
+	databaseID := os.Getenv("TEST_FIRECONF_DATABASE")
+	if projectID == "" || databaseID == "" {
+		t.Skip("TEST_FIRECONF_PROJECT and TEST_FIRECONF_DATABASE must be set for E2E tests")
+	}
+
+	t.Parallel()
+
+	ctx := context.Background()
+	authConfig := firestore.AuthConfig{
+		ProjectID:  projectID,
+		DatabaseID: databaseID,
+	}
+
+	client, err := firestore.NewClient(ctx, authConfig)
+	gt.NoError(t, err)
+	defer func() { _ = client.Close() }()
+
+	timestamp := time.Now().UnixNano()
+	collectionName := fmt.Sprintf("fireconf_vector_name_test_%d", timestamp)
+
+	t.Run("Firestore API rejects vector index with __name__ field", func(t *testing.T) {
+		// Attempt to create a vector index that includes __name__.
+		// The Firestore Admin API should reject this with an error indicating
+		// that __name__ has no valid order or array config in vector context.
+		indexWithName := interfaces.FirestoreIndex{
+			QueryScope: "COLLECTION",
+			Fields: []interfaces.FirestoreIndexField{
+				{FieldPath: "title", Order: "ASCENDING"},
+				{FieldPath: "__name__", Order: "ASCENDING"},
+				{FieldPath: "embedding", VectorConfig: &interfaces.FirestoreVectorConfig{Dimension: 768}},
+			},
+		}
+
+		op, err := client.CreateIndex(ctx, collectionName, indexWithName)
+		if err != nil {
+			// Expected: Firestore API rejects __name__ in vector indexes
+			t.Logf("Firestore API rejected __name__ in vector index (expected): %v", err)
+		} else {
+			// If the operation was returned, wait for it and expect failure
+			if op != nil {
+				waitErr := client.WaitForOperation(ctx, op)
+				if waitErr != nil {
+					t.Logf("Firestore operation failed as expected: %v", waitErr)
+				} else {
+					// If it somehow succeeded, clean up and fail the test
+					t.Error("Expected Firestore API to reject vector index with __name__ field, but it succeeded")
+					indexes, _ := client.ListIndexes(ctx, collectionName)
+					for _, idx := range indexes {
+						if idx.Name != "" {
+							cleanOp, _ := client.DeleteIndex(ctx, idx.Name)
+							if cleanOp != nil {
+								_ = client.WaitForOperation(ctx, cleanOp)
+							}
+						}
+					}
+				}
+			} else {
+				// AlreadyExists treated as success with nil op - unexpected for a new collection
+				t.Error("Expected Firestore API to reject vector index with __name__ field, but it was accepted (AlreadyExists)")
+			}
+		}
+	})
+
+	t.Run("Vector index without __name__ is accepted", func(t *testing.T) {
+		logger := slog.Default()
+
+		testYAML := `collections:
+- name: ` + collectionName + `
+  indexes:
+  - fields:
+    - name: title
+      order: ASCENDING
+    - name: embedding
+      order: ASCENDING
+      vector_config:
+        dimension: 768
+    query_scope: COLLECTION
+`
+		var config model.Config
+		err := yaml.Unmarshal([]byte(testYAML), &config)
+		gt.NoError(t, err)
+
+		syncUseCase := usecase.NewSync(client, logger)
+		err = syncUseCase.Execute(ctx, &config)
+		gt.NoError(t, err)
+
+		// Verify the index was created
+		importUseCase := usecase.NewImport(client, logger)
+		importedConfig, err := importUseCase.Execute(ctx, []string{collectionName})
+		gt.NoError(t, err)
+		gt.Equal(t, len(importedConfig.Collections), 1)
+
+		found := false
+		for _, idx := range importedConfig.Collections[0].Indexes {
+			for _, f := range idx.Fields {
+				if f.VectorConfig != nil && f.VectorConfig.Dimension == 768 {
+					found = true
+				}
+			}
+		}
+		if !found {
+			t.Error("Expected vector index with dimension 768 to be found after sync")
+		}
+
+		// Clean up
+		indexes, err := client.ListIndexes(ctx, collectionName)
+		gt.NoError(t, err)
+		for _, idx := range indexes {
+			if idx.Name != "" {
+				op, err := client.DeleteIndex(ctx, idx.Name)
+				if err == nil && op != nil {
+					_ = client.WaitForOperation(ctx, op)
+				}
+			}
+		}
+	})
 }
 
 // indexesMatch compares two indexes for equality

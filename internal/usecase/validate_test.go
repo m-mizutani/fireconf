@@ -54,7 +54,6 @@ func TestValidator_Execute(t *testing.T) {
 						{
 							Fields: []model.IndexField{
 								{Name: "title", Order: "ASCENDING"},
-								{Name: "__name__", Order: "ASCENDING"},
 								{
 									Name:         "embedding",
 									VectorConfig: &model.VectorConfig{Dimension: 768},
@@ -69,6 +68,34 @@ func TestValidator_Execute(t *testing.T) {
 
 		err := validator.Execute(ctx, config)
 		gt.NoError(t, err)
+	})
+
+	t.Run("Error: vector index with __name__ field", func(t *testing.T) {
+		validator := usecase.NewValidator(logger)
+
+		config := &model.Config{
+			Collections: []model.Collection{
+				{
+					Name: "documents",
+					Indexes: []model.Index{
+						{
+							Fields: []model.IndexField{
+								{Name: "title", Order: "ASCENDING"},
+								{Name: "__name__", Order: "ASCENDING"},
+								{
+									Name:         "embedding",
+									VectorConfig: &model.VectorConfig{Dimension: 768},
+								},
+							},
+							QueryScope: "COLLECTION",
+						},
+					},
+				},
+			},
+		}
+
+		err := validator.Execute(ctx, config)
+		gt.Error(t, err).Contains("vector index must not include __name__ field")
 	})
 
 	t.Run("Error: empty collection name", func(t *testing.T) {

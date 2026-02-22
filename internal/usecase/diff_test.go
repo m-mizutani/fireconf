@@ -126,7 +126,6 @@ func TestDiffIndexes(t *testing.T) {
 			{
 				Fields: []model.IndexField{
 					{Name: "title", Order: "ASCENDING"},
-					{Name: "__name__", Order: "ASCENDING"},
 					{
 						Name:         "embedding",
 						VectorConfig: &model.VectorConfig{Dimension: 768},
@@ -140,8 +139,8 @@ func TestDiffIndexes(t *testing.T) {
 
 		toCreate, _ := usecase.DiffIndexes(desired, existing)
 		gt.Equal(t, len(toCreate), 1)
-		gt.NotEqual(t, toCreate[0].Fields[2].VectorConfig, nil)
-		gt.Equal(t, toCreate[0].Fields[2].VectorConfig.Dimension, 768)
+		gt.NotEqual(t, toCreate[0].Fields[1].VectorConfig, nil)
+		gt.Equal(t, toCreate[0].Fields[1].VectorConfig.Dimension, 768)
 	})
 
 	t.Run("Different query scopes", func(t *testing.T) {
@@ -170,15 +169,48 @@ func TestDiffIndexes(t *testing.T) {
 		gt.Equal(t, toCreate[0].QueryScope, "COLLECTION_GROUP")
 	})
 
-	t.Run("Detect __name__ order difference", func(t *testing.T) {
+	t.Run("Firestore-added __name__ does not cause spurious diff", func(t *testing.T) {
+		// Firestore automatically appends __name__ to non-vector indexes.
+		// The desired config does not include __name__, but the existing index
+		// returned by Firestore does. This should NOT trigger a diff.
 		desired := []model.Index{
 			{
 				Fields: []model.IndexField{
-					{Name: "CreatedAt", Order: "DESCENDING"},
-					{Name: "__name__", Order: "DESCENDING"},
+					{Name: "email", Order: "ASCENDING"},
+					{Name: "score", Order: "DESCENDING"},
+				},
+				QueryScope: "COLLECTION",
+			},
+		}
+
+		existing := []interfaces.FirestoreIndex{
+			{
+				Name: "projects/test/databases/test/collectionGroups/users/indexes/idx1",
+				Fields: []interfaces.FirestoreIndexField{
+					{FieldPath: "email", Order: "ASCENDING"},
+					{FieldPath: "score", Order: "DESCENDING"},
+					{FieldPath: "__name__", Order: "ASCENDING"}, // auto-added by Firestore
+				},
+				QueryScope: "COLLECTION",
+				State:      "READY",
+			},
+		}
+
+		toCreate, toDelete := usecase.DiffIndexes(desired, existing)
+		gt.Equal(t, len(toCreate), 0)
+		gt.Equal(t, len(toDelete), 0)
+	})
+
+	t.Run("Firestore returns COLLECTION_GROUP for vector index created as COLLECTION", func(t *testing.T) {
+		// Firestore may return COLLECTION_GROUP for vector indexes even when they
+		// were created with COLLECTION scope. This should NOT trigger a diff.
+		desired := []model.Index{
+			{
+				Fields: []model.IndexField{
+					{Name: "title", Order: "ASCENDING"},
 					{
-						Name:         "Embedding",
-						VectorConfig: &model.VectorConfig{Dimension: 256},
+						Name:         "embedding",
+						VectorConfig: &model.VectorConfig{Dimension: 768},
 					},
 				},
 				QueryScope: "COLLECTION",
@@ -187,35 +219,19 @@ func TestDiffIndexes(t *testing.T) {
 
 		existing := []interfaces.FirestoreIndex{
 			{
-				Name: "projects/test/databases/test/collectionGroups/tickets/indexes/idx1",
+				Name: "projects/test/databases/test/collectionGroups/docs/indexes/idx1",
 				Fields: []interfaces.FirestoreIndexField{
-					{FieldPath: "CreatedAt", Order: "DESCENDING"},
-					{FieldPath: "__name__", Order: "ASCENDING"},
-					{
-						FieldPath:    "Embedding",
-						VectorConfig: &interfaces.FirestoreVectorConfig{Dimension: 256},
-					},
+					{FieldPath: "title", Order: "ASCENDING"},
+					{FieldPath: "embedding", VectorConfig: &interfaces.FirestoreVectorConfig{Dimension: 768}},
 				},
-				QueryScope: "COLLECTION",
+				QueryScope: "COLLECTION_GROUP", // Firestore returns COLLECTION_GROUP for vector indexes
+				State:      "READY",
 			},
 		}
 
 		toCreate, toDelete := usecase.DiffIndexes(desired, existing)
-		gt.Equal(t, len(toCreate), 1)
-		gt.Equal(t, len(toDelete), 1)
-
-		// Find __name__ field dynamically
-		var nameField *interfaces.FirestoreIndexField
-		for i := range toCreate[0].Fields {
-			if toCreate[0].Fields[i].FieldPath == "__name__" {
-				nameField = &toCreate[0].Fields[i]
-				break
-			}
-		}
-		if nameField == nil {
-			t.Fatal("expected to find __name__ field in toCreate")
-		}
-		gt.Equal(t, nameField.Order, "DESCENDING")
+		gt.Equal(t, len(toCreate), 0)
+		gt.Equal(t, len(toDelete), 0)
 	})
 
 	t.Run("Detect field order difference", func(t *testing.T) {

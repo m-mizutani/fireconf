@@ -78,37 +78,23 @@ func (v *Validator) validateIndexConstraints(index model.Index, indexNum int) er
 		}
 	}
 
-	// Constraint 1: __name__ field positioning
-	// - For non-vector indexes: __name__ must be last
-	// - For vector indexes: __name__ must be before vector fields
-	if nameFieldIndex >= 0 {
-		if len(vectorFieldIndices) == 0 {
-			// Non-vector index: __name__ must be last
-			if nameFieldIndex != len(fields)-1 {
-				return fmt.Errorf("index[%d]: __name__ field must be last in non-vector index", indexNum)
-			}
-		} else {
-			// Vector index: __name__ must not be after vector fields
-			for _, vectorIndex := range vectorFieldIndices {
-				if nameFieldIndex > vectorIndex {
-					return fmt.Errorf("index[%d]: __name__ field must be before vector config fields", indexNum)
-				}
-			}
+	// Constraint 1: __name__ field is not allowed in vector indexes.
+	// The Firestore Admin API rejects vector indexes that include __name__
+	// with the error "No valid order or array config provided: field_path: '__name__'".
+	// __name__ is automatically managed by Firestore internally.
+	if nameFieldIndex >= 0 && len(vectorFieldIndices) > 0 {
+		return fmt.Errorf("index[%d]: vector index must not include __name__ field (Firestore manages it internally)", indexNum)
+	}
+
+	// Constraint 2: For non-vector indexes, __name__ must be last
+	if nameFieldIndex >= 0 && len(vectorFieldIndices) == 0 {
+		if nameFieldIndex != len(fields)-1 {
+			return fmt.Errorf("index[%d]: __name__ field must be last in non-vector index", indexNum)
 		}
 	}
 
-	// Constraint 2: Vector fields must be at the very end of the index
+	// Constraint 3: Vector fields must be at the very end of the index
 	if len(vectorFieldIndices) > 0 {
-		// Vector fields must be after __name__ field
-		if nameFieldIndex >= 0 {
-			for _, vectorIndex := range vectorFieldIndices {
-				if vectorIndex < nameFieldIndex {
-					return fmt.Errorf("index[%d]: vector config field '%s' must be after __name__ field",
-						indexNum, fields[vectorIndex].Name)
-				}
-			}
-		}
-
 		// All vector fields must be at the end
 		expectedStart := len(fields) - len(vectorFieldIndices)
 		for j, vectorIndex := range vectorFieldIndices {
