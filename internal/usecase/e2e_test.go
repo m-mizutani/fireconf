@@ -17,6 +17,30 @@ import (
 	"github.com/m-mizutani/gt"
 )
 
+// cleanupCollection deletes all indexes and disables TTL for a collection.
+// Intended for use in t.Cleanup() to guarantee cleanup even on test failure.
+func cleanupCollection(ctx context.Context, t *testing.T, client *firestore.Client, collectionName string) {
+	t.Helper()
+	t.Logf("Cleanup: removing indexes for collection %s", collectionName)
+
+	indexes, err := client.ListIndexes(ctx, collectionName)
+	if err != nil {
+		t.Logf("Cleanup: failed to list indexes for %s: %v", collectionName, err)
+	} else {
+		for _, idx := range indexes {
+			if idx.Name != "" {
+				if _, err := client.DeleteIndex(ctx, idx.Name); err != nil {
+					t.Logf("Cleanup: failed to delete index %s: %v", idx.Name, err)
+				}
+			}
+		}
+	}
+
+	if _, err := client.DisableTTLPolicy(ctx, collectionName); err != nil {
+		t.Logf("Cleanup: failed to disable TTL for %s: %v", collectionName, err)
+	}
+}
+
 func TestE2E_FullCycle(t *testing.T) {
 	// Skip if environment variables are not set
 	projectID := os.Getenv("TEST_FIRECONF_PROJECT")
@@ -43,6 +67,12 @@ func TestE2E_FullCycle(t *testing.T) {
 
 		// Test collection name with timestamp to avoid conflicts
 		testCollectionName := fmt.Sprintf("fireconf_e2e_test_%d", time.Now().UnixNano())
+
+		// Register cleanup early so it runs even if the test fails or panics
+		t.Cleanup(func() {
+			cleanupCollection(context.Background(), t, client, testCollectionName)
+		})
+
 		// Step 1: Load test configuration from embedded file
 		// Replace placeholder with actual test collection name
 		testYAML := strings.ReplaceAll(usecase.TestDataE2ESimple, "__TEST_COLLECTION__", testCollectionName)
@@ -51,42 +81,19 @@ func TestE2E_FullCycle(t *testing.T) {
 		err = yaml.Unmarshal([]byte(testYAML), &originalConfig)
 		gt.NoError(t, err)
 
-		// Step 2: Delete all existing indexes for the test collection
-		t.Log("Deleting existing indexes...")
-		existingIndexes, err := client.ListIndexes(ctx, testCollectionName)
-		gt.NoError(t, err)
-
-		for _, idx := range existingIndexes {
-			if idx.Name != "" { // Skip default indexes
-				t.Logf("Deleting index: %s", idx.Name)
-				op, err := client.DeleteIndex(ctx, idx.Name)
-				gt.NoError(t, err)
-				if op != nil {
-					err = client.WaitForOperation(ctx, op)
-					gt.NoError(t, err)
-				}
-			}
-		}
-
-		// Disable any existing TTL
-		op, err := client.DisableTTLPolicy(ctx, testCollectionName)
-		if err == nil && op != nil {
-			_ = client.WaitForOperation(ctx, op)
-		}
-
-		// Step 3: Sync configuration to Firestore
+		// Step 2: Sync configuration to Firestore
 		t.Log("Syncing configuration to Firestore...")
-		syncUseCase := usecase.NewSync(client, logger) // wait for indexes to be ready
+		syncUseCase := usecase.NewSync(client, logger)
 		err = syncUseCase.Execute(ctx, &originalConfig)
 		gt.NoError(t, err)
 
-		// Step 4: Import configuration back from Firestore
+		// Step 3: Import configuration back from Firestore
 		t.Log("Importing configuration from Firestore...")
 		importUseCase := usecase.NewImport(client, logger)
 		importedConfig, err := importUseCase.Execute(ctx, []string{testCollectionName})
 		gt.NoError(t, err)
 
-		// Step 5: Validate imported configuration matches original
+		// Step 4: Validate imported configuration matches original
 		t.Log("Validating imported configuration...")
 		gt.Equal(t, len(importedConfig.Collections), 1)
 		gt.Equal(t, importedConfig.Collections[0].Name, testCollectionName)
@@ -118,31 +125,11 @@ func TestE2E_FullCycle(t *testing.T) {
 			gt.Equal(t, importedConfig.Collections[0].TTL.Field, originalConfig.Collections[0].TTL.Field)
 		}
 
-		// Step 6: Re-sync to verify idempotency
+		// Step 5: Re-sync to verify idempotency
 		t.Log("Re-syncing to verify idempotency...")
 		syncUseCase2 := usecase.NewSync(client, logger)
 		err = syncUseCase2.Execute(ctx, importedConfig)
 		gt.NoError(t, err)
-
-		// Step 7: Clean up - delete test indexes
-		t.Log("Cleaning up test indexes...")
-		finalIndexes, err := client.ListIndexes(ctx, testCollectionName)
-		gt.NoError(t, err)
-
-		for _, idx := range finalIndexes {
-			if idx.Name != "" {
-				op, err := client.DeleteIndex(ctx, idx.Name)
-				if err == nil && op != nil {
-					_ = client.WaitForOperation(ctx, op)
-				}
-			}
-		}
-
-		// Disable TTL
-		op, err = client.DisableTTLPolicy(ctx, testCollectionName)
-		if err == nil && op != nil {
-			_ = client.WaitForOperation(ctx, op)
-		}
 	})
 }
 
@@ -191,6 +178,7 @@ func TestE2E_WithTestData(t *testing.T) {
 			client, err := firestore.NewClient(ctx, authConfig)
 			gt.NoError(t, err)
 			defer func() { _ = client.Close() }()
+
 			// Parse test data
 			var config model.Config
 			err = yaml.Unmarshal([]byte(tc.testData), &config)
@@ -202,8 +190,16 @@ func TestE2E_WithTestData(t *testing.T) {
 				config.Collections[i].Name = fmt.Sprintf("%s_e2e_%d", config.Collections[i].Name, timestamp)
 			}
 
+			// Register cleanup early so it runs even if the test fails
+			for _, collection := range config.Collections {
+				collectionName := collection.Name
+				t.Cleanup(func() {
+					cleanupCollection(context.Background(), t, client, collectionName)
+				})
+			}
+
 			// Sync configuration
-			syncUseCase := usecase.NewSync(client, logger) // wait for indexes
+			syncUseCase := usecase.NewSync(client, logger)
 			err = syncUseCase.Execute(ctx, &config)
 			gt.NoError(t, err)
 
@@ -214,20 +210,6 @@ func TestE2E_WithTestData(t *testing.T) {
 				gt.NoError(t, err)
 				gt.Equal(t, len(importedConfig.Collections), 1)
 				gt.Equal(t, importedConfig.Collections[0].Name, collection.Name)
-			}
-
-			// Clean up
-			for _, collection := range config.Collections {
-				indexes, err := client.ListIndexes(ctx, collection.Name)
-				gt.NoError(t, err)
-				for _, idx := range indexes {
-					if idx.Name != "" {
-						op, err := client.DeleteIndex(ctx, idx.Name)
-						if err == nil && op != nil {
-							_ = client.WaitForOperation(ctx, op)
-						}
-					}
-				}
 			}
 		})
 	}
@@ -258,6 +240,11 @@ func TestE2E_VectorIndexNameFieldBehavior(t *testing.T) {
 	timestamp := time.Now().UnixNano()
 	collectionName := fmt.Sprintf("fireconf_vector_name_test_%d", timestamp)
 
+	// Register cleanup for the entire collection used by both sub-tests
+	t.Cleanup(func() {
+		cleanupCollection(context.Background(), t, client, collectionName)
+	})
+
 	t.Run("Firestore API rejects vector index with __name__ field", func(t *testing.T) {
 		// Attempt to create a vector index that includes __name__.
 		// The Firestore Admin API should reject this with an error indicating
@@ -271,33 +258,36 @@ func TestE2E_VectorIndexNameFieldBehavior(t *testing.T) {
 			},
 		}
 
-		op, err := client.CreateIndex(ctx, collectionName, indexWithName)
+		idxName, err := client.CreateIndex(ctx, collectionName, indexWithName)
 		if err != nil {
-			// Expected: Firestore API rejects __name__ in vector indexes
+			// Expected: Firestore API rejects __name__ in vector indexes synchronously
 			t.Logf("Firestore API rejected __name__ in vector index (expected): %v", err)
-		} else {
-			// If the operation was returned, wait for it and expect failure
-			if op != nil {
-				waitErr := client.WaitForOperation(ctx, op)
-				if waitErr != nil {
-					t.Logf("Firestore operation failed as expected: %v", waitErr)
-				} else {
-					// If it somehow succeeded, clean up and fail the test
-					t.Error("Expected Firestore API to reject vector index with __name__ field, but it succeeded")
-					indexes, _ := client.ListIndexes(ctx, collectionName)
-					for _, idx := range indexes {
-						if idx.Name != "" {
-							cleanOp, _ := client.DeleteIndex(ctx, idx.Name)
-							if cleanOp != nil {
-								_ = client.WaitForOperation(ctx, cleanOp)
-							}
-						}
-					}
+		} else if idxName != "" {
+			// Creation submitted; poll until it fails or succeeds
+			rejected := false
+			for i := 0; i < 30; i++ {
+				idx, getErr := client.GetIndex(ctx, idxName)
+				if getErr != nil {
+					t.Logf("Firestore operation failed as expected: %v", getErr)
+					rejected = true
+					break
 				}
-			} else {
-				// AlreadyExists treated as success with nil op - unexpected for a new collection
-				t.Error("Expected Firestore API to reject vector index with __name__ field, but it was accepted (AlreadyExists)")
+				if idx.State == "ERROR" || idx.State == "NEEDS_REPAIR" {
+					t.Logf("Firestore index entered %s state as expected", idx.State)
+					rejected = true
+					break
+				}
+				if idx.State == "READY" {
+					break
+				}
+				time.Sleep(5 * time.Second)
 			}
+			if !rejected {
+				t.Error("Expected Firestore API to reject vector index with __name__ field, but it succeeded")
+			}
+		} else {
+			// AlreadyExists treated as success with empty name - unexpected for a new collection
+			t.Error("Expected Firestore API to reject vector index with __name__ field, but it was accepted (AlreadyExists)")
 		}
 	})
 
@@ -340,18 +330,6 @@ func TestE2E_VectorIndexNameFieldBehavior(t *testing.T) {
 		}
 		if !found {
 			t.Error("Expected vector index with dimension 768 to be found after sync")
-		}
-
-		// Clean up
-		indexes, err := client.ListIndexes(ctx, collectionName)
-		gt.NoError(t, err)
-		for _, idx := range indexes {
-			if idx.Name != "" {
-				op, err := client.DeleteIndex(ctx, idx.Name)
-				if err == nil && op != nil {
-					_ = client.WaitForOperation(ctx, op)
-				}
-			}
 		}
 	})
 }

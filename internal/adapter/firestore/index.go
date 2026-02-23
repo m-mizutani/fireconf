@@ -46,8 +46,9 @@ func (c *Client) ListIndexes(ctx context.Context, collectionID string) ([]interf
 	return indexes, nil
 }
 
-// CreateIndex creates a new composite index
-func (c *Client) CreateIndex(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error) {
+// CreateIndex creates a new composite index and returns the index resource name.
+// Returns an empty string if the index already exists.
+func (c *Client) CreateIndex(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error) {
 	// Convert domain model to API format
 	apiIndex := convertIndexToAPI(index)
 
@@ -60,12 +61,33 @@ func (c *Client) CreateIndex(ctx context.Context, collectionID string, index int
 	if err != nil {
 		// Handle already exists error gracefully
 		if s, ok := status.FromError(err); ok && s.Code() == codes.AlreadyExists {
-			return nil, nil // Index already exists, consider it success
+			return "", nil // Index already exists, no need to wait
 		}
-		return nil, fmt.Errorf("failed to create index: %w", err)
+		return "", fmt.Errorf("failed to create index: %w", err)
 	}
 
-	return op, nil
+	// Extract the index resource name from the operation metadata
+	meta, err := op.Metadata()
+	if err != nil || meta == nil {
+		return "", fmt.Errorf("failed to get index operation metadata: %w", err)
+	}
+
+	return meta.Index, nil
+}
+
+// GetIndex retrieves a single index by its full resource name.
+func (c *Client) GetIndex(ctx context.Context, indexName string) (*interfaces.FirestoreIndex, error) {
+	req := &adminpb.GetIndexRequest{
+		Name: indexName,
+	}
+
+	index, err := c.admin.GetIndex(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get index %s: %w", indexName, err)
+	}
+
+	result := convertIndexFromAPI(index)
+	return &result, nil
 }
 
 // DeleteIndex deletes an index by its name

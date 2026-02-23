@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/m-mizutani/fireconf/internal/interfaces"
@@ -75,14 +76,22 @@ func (s *Sync) Execute(ctx context.Context, config *model.Config) error {
 				return goerr.Wrap(err, "failed to ensure collection exists", goerr.V("collection", collection.Name))
 			}
 
-			// Sync indexes
-			if err := s.syncIndexes(ctx, collection); err != nil {
-				return goerr.Wrap(err, "failed to sync indexes", goerr.V("collection", collection.Name))
-			}
-
-			// Sync TTL
-			if err := s.syncTTL(ctx, collection); err != nil {
-				return goerr.Wrap(err, "failed to sync TTL", goerr.V("collection", collection.Name))
+			// Sync indexes and TTL in parallel (they are independent)
+			cg, cctx := errgroup.WithContext(ctx)
+			cg.Go(func() error {
+				if err := s.syncIndexes(cctx, collection); err != nil {
+					return goerr.Wrap(err, "failed to sync indexes", goerr.V("collection", collection.Name))
+				}
+				return nil
+			})
+			cg.Go(func() error {
+				if err := s.syncTTL(cctx, collection); err != nil {
+					return goerr.Wrap(err, "failed to sync TTL", goerr.V("collection", collection.Name))
+				}
+				return nil
+			})
+			if err := cg.Wait(); err != nil {
+				return err
 			}
 
 			s.logger.Info("Collection processing completed", slog.String("name", collection.Name))
@@ -203,31 +212,37 @@ func (s *Sync) syncIndexes(ctx context.Context, collection model.Collection) err
 		}
 	}
 
-	// Create new indexes
+	// Create new indexes and collect the created index names
+	var createdIndexNames []string
 	if len(toCreate) > 0 {
-		if err := s.createIndexesConcurrently(ctx, collection.Name, toCreate); err != nil {
+		names, err := s.createIndexesConcurrently(ctx, collection.Name, toCreate)
+		if err != nil {
 			return err
 		}
+		createdIndexNames = names
 	}
 
-	// Wait for all desired indexes to reach READY state (handles externally-CREATING indexes too)
-	desiredFirestoreIndexes := make([]interfaces.FirestoreIndex, 0, len(collection.Indexes))
-	for _, idx := range collection.Indexes {
-		desiredFirestoreIndexes = append(desiredFirestoreIndexes, convertModelToFirestoreIndex(idx))
-	}
-	if err := s.waitForIndexesReady(ctx, collection.Name, desiredFirestoreIndexes); err != nil {
+	// Wait for the newly created indexes to reach READY state by polling each by name
+	if err := s.waitForIndexesReady(ctx, createdIndexNames); err != nil {
 		return goerr.Wrap(err, "failed to wait for indexes to become ready")
 	}
 
 	return nil
 }
 
-// createIndexesConcurrently creates multiple indexes in parallel
-func (s *Sync) createIndexesConcurrently(ctx context.Context, collectionName string, indexes []interfaces.FirestoreIndex) error {
+// createIndexesConcurrently creates multiple indexes in parallel and returns their resource names.
+// Index creation requests are submitted concurrently without waiting for each
+// individual LRO to complete. The caller is responsible for waiting via
+// waitForIndexesReady, which polls each index by name directly.
+// This avoids potential hangs in the Firestore LRO polling mechanism.
+func (s *Sync) createIndexesConcurrently(ctx context.Context, collectionName string, indexes []interfaces.FirestoreIndex) ([]string, error) {
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Limit concurrent operations
 	sem := make(chan struct{}, 5)
+
+	var mu sync.Mutex
+	var createdNames []string
 
 	for _, idx := range indexes {
 		idx := idx // capture
@@ -249,79 +264,50 @@ func (s *Sync) createIndexesConcurrently(ctx context.Context, collectionName str
 				slog.Any("fields", idx.Fields),
 				slog.String("queryScope", idx.QueryScope))
 
-			op, err := s.client.CreateIndex(ctx, collectionName, idx)
+			name, err := s.client.CreateIndex(ctx, collectionName, idx)
 			if err != nil {
 				return goerr.Wrap(err, "failed to create index",
 					goerr.V("collection", collectionName),
 					goerr.V("fields", idx.Fields))
 			}
 
-			if !s.async && op != nil {
-				s.logger.Info("Waiting for index creation to complete",
-					slog.String("collection", collectionName),
-					slog.Any("fields", idx.Fields))
-
-				progressLogger := func(elapsed time.Duration) {
-					s.logger.Info("Still waiting for index creation...",
-						slog.String("collection", collectionName),
-						slog.Any("fields", idx.Fields),
-						slog.Duration("elapsed", elapsed))
-				}
-
-				if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
-					return goerr.Wrap(err, "failed to wait for index creation",
-						goerr.V("collection", collectionName),
-						goerr.V("fields", idx.Fields))
-				}
+			if name != "" {
+				mu.Lock()
+				createdNames = append(createdNames, name)
+				mu.Unlock()
 			}
 
 			return nil
 		})
 	}
 
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	return createdNames, nil
 }
 
-// syncTTL synchronizes TTL policy for a collection
+// syncTTL synchronizes TTL policy for a collection.
+// TTL operations are submitted as fire-and-forget since op.Wait() hangs indefinitely
+// for Firestore UpdateField LROs. TTL changes are applied asynchronously by Firestore.
 func (s *Sync) syncTTL(ctx context.Context, collection model.Collection) error {
-	// If no TTL is desired, check if we need to disable existing TTL
 	if collection.TTL == nil {
 		if s.dryRun {
 			s.logger.Info("Would check and disable TTL if exists",
 				slog.String("collection", collection.Name))
 			return nil
 		}
-
-		// Disable any existing TTL
-		op, err := s.client.DisableTTLPolicy(ctx, collection.Name)
-		if err != nil {
+		if _, err := s.client.DisableTTLPolicy(ctx, collection.Name); err != nil {
 			return goerr.Wrap(err, "failed to disable TTL policy")
-		}
-
-		if !s.async && op != nil {
-			s.logger.Info("Waiting for TTL policy disable to complete",
-				slog.String("collection", collection.Name))
-
-			progressLogger := func(elapsed time.Duration) {
-				s.logger.Info("Still waiting for TTL policy disable...",
-					slog.String("collection", collection.Name),
-					slog.Duration("elapsed", elapsed))
-			}
-
-			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
-				return goerr.Wrap(err, "failed to wait for TTL policy disable")
-			}
 		}
 		return nil
 	}
 
-	// Get current TTL policy
 	existing, err := s.client.GetTTLPolicy(ctx, collection.Name, collection.TTL.Field)
 	if err != nil {
 		return goerr.Wrap(err, "failed to get TTL policy")
 	}
 
-	// Check if update is needed
 	needsUpdate, action := DiffTTL(collection.TTL, existing)
 	if !needsUpdate {
 		s.logger.Debug("TTL policy is up to date",
@@ -337,152 +323,88 @@ func (s *Sync) syncTTL(ctx context.Context, collection model.Collection) error {
 		return nil
 	}
 
-	// Apply TTL policy
 	switch action {
 	case "enable":
 		s.logger.Info("Enabling TTL policy",
 			slog.String("collection", collection.Name),
 			slog.String("field", collection.TTL.Field))
-
-		op, err := s.client.EnableTTLPolicy(ctx, collection.Name, collection.TTL.Field)
-		if err != nil {
+		if _, err := s.client.EnableTTLPolicy(ctx, collection.Name, collection.TTL.Field); err != nil {
 			return goerr.Wrap(err, "failed to enable TTL policy")
 		}
 
-		if !s.async && op != nil {
-			s.logger.Info("Waiting for TTL policy enable to complete",
-				slog.String("collection", collection.Name),
-				slog.String("field", collection.TTL.Field))
-
-			progressLogger := func(elapsed time.Duration) {
-				s.logger.Info("Still waiting for TTL policy enable...",
-					slog.String("collection", collection.Name),
-					slog.String("field", collection.TTL.Field),
-					slog.Duration("elapsed", elapsed))
-			}
-
-			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
-				return goerr.Wrap(err, "failed to wait for TTL policy enable")
-			}
-		}
-
 	case "change":
-		// Disable old TTL first
 		s.logger.Info("Changing TTL field, disabling old policy",
 			slog.String("collection", collection.Name))
-
-		op, err := s.client.DisableTTLPolicy(ctx, collection.Name)
-		if err != nil {
+		if _, err := s.client.DisableTTLPolicy(ctx, collection.Name); err != nil {
 			return goerr.Wrap(err, "failed to disable old TTL policy")
 		}
-
-		if !s.async && op != nil {
-			s.logger.Info("Waiting for old TTL policy disable to complete",
-				slog.String("collection", collection.Name))
-
-			progressLogger := func(elapsed time.Duration) {
-				s.logger.Info("Still waiting for old TTL policy disable...",
-					slog.String("collection", collection.Name),
-					slog.Duration("elapsed", elapsed))
-			}
-
-			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
-				return goerr.Wrap(err, "failed to wait for old TTL policy disable")
-			}
-		}
-
-		// Enable new TTL
 		s.logger.Info("Enabling new TTL policy",
 			slog.String("collection", collection.Name),
 			slog.String("field", collection.TTL.Field))
-
-		op, err = s.client.EnableTTLPolicy(ctx, collection.Name, collection.TTL.Field)
-		if err != nil {
+		if _, err := s.client.EnableTTLPolicy(ctx, collection.Name, collection.TTL.Field); err != nil {
 			return goerr.Wrap(err, "failed to enable new TTL policy")
-		}
-
-		if !s.async && op != nil {
-			s.logger.Info("Waiting for new TTL policy enable to complete",
-				slog.String("collection", collection.Name),
-				slog.String("field", collection.TTL.Field))
-
-			progressLogger := func(elapsed time.Duration) {
-				s.logger.Info("Still waiting for new TTL policy enable...",
-					slog.String("collection", collection.Name),
-					slog.String("field", collection.TTL.Field),
-					slog.Duration("elapsed", elapsed))
-			}
-
-			if err := s.waitForOperationWithProgress(ctx, op, progressLogger); err != nil {
-				return goerr.Wrap(err, "failed to wait for new TTL policy enable")
-			}
 		}
 	}
 
 	return nil
 }
 
-// waitForIndexesReady polls until all desired indexes reach READY state.
-// If skipWait is true, returns immediately.
-func (s *Sync) waitForIndexesReady(ctx context.Context, collectionName string, desired []interfaces.FirestoreIndex) error {
-	if s.async || s.dryRun || len(desired) == 0 {
+// waitForIndexesReady waits for each created index to reach a stable state in parallel.
+// Each index is polled individually via GetIndex, which avoids being blocked by
+// unrelated indexes in the same collection.
+func (s *Sync) waitForIndexesReady(ctx context.Context, indexNames []string) error {
+	if s.async || s.dryRun || len(indexNames) == 0 {
 		return nil
 	}
 
-	// Build desired key set
-	desiredKeys := make(map[string]struct{}, len(desired))
-	for _, idx := range desired {
-		desiredKeys[getIndexKey(idx)] = struct{}{}
+	g, ctx := errgroup.WithContext(ctx)
+	for _, name := range indexNames {
+		name := name
+		g.Go(func() error {
+			return s.waitForSingleIndexReady(ctx, name)
+		})
 	}
 
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	s.logger.Info("All indexes are ready")
+	return nil
+}
+
+// waitForSingleIndexReady polls a single index by name until it reaches READY state.
+func (s *Sync) waitForSingleIndexReady(ctx context.Context, indexName string) error {
 	backoff := time.Second
 	maxBackoff := 10 * time.Second
 	lastLog := time.Now()
 	logInterval := 10 * time.Second
 
 	for {
-		existing, err := s.client.ListIndexes(ctx, collectionName)
+		idx, err := s.client.GetIndex(ctx, indexName)
 		if err != nil {
-			// Treat as transient unless context is cancelled
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			s.logger.Warn("Failed to list indexes while waiting, retrying",
-				slog.String("collection", collectionName),
-				slog.String("error", err.Error()))
+			s.logger.Warn("Failed to get index while waiting, retrying",
+				slog.String("index", indexName),
+				slog.Any("error", err))
 		} else {
-			existingByKey := make(map[string]interfaces.FirestoreIndex, len(existing))
-			for _, idx := range existing {
-				existingByKey[getIndexKey(idx)] = idx
-			}
-
-			allReady := true
-			for key := range desiredKeys {
-				idx, found := existingByKey[key]
-				if !found {
-					allReady = false
-					continue
-				}
-				switch idx.State {
-				case "READY":
-					// good
-				case "ERROR":
-					return goerr.New("index entered ERROR state",
-						goerr.V("collection", collectionName),
-						goerr.V("index", idx.Name))
-				default:
-					allReady = false
-				}
-			}
-
-			if allReady {
+			switch idx.State {
+			case "READY":
+				s.logger.Info("Index is ready", slog.String("index", indexName))
 				return nil
+			case "ERROR", "NEEDS_REPAIR":
+				return goerr.New(fmt.Sprintf("index entered %s state", idx.State),
+					goerr.V("index", indexName))
+			default:
+				// CREATING or other transitional state — keep waiting
 			}
 		}
 
 		if time.Since(lastLog) >= logInterval {
-			s.logger.Info("Waiting for indexes to become READY",
-				slog.String("collection", collectionName))
+			s.logger.Info("Waiting for index to become READY",
+				slog.String("index", indexName))
 			lastLog = time.Now()
 		}
 

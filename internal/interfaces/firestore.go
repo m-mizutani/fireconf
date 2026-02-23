@@ -17,7 +17,8 @@ type FirestoreClient interface {
 
 	// Index operations
 	ListIndexes(ctx context.Context, collectionID string) ([]FirestoreIndex, error)
-	CreateIndex(ctx context.Context, collectionID string, index FirestoreIndex) (interface{}, error)
+	GetIndex(ctx context.Context, indexName string) (*FirestoreIndex, error)
+	CreateIndex(ctx context.Context, collectionID string, index FirestoreIndex) (string, error)
 	DeleteIndex(ctx context.Context, indexName string) (interface{}, error)
 
 	// TTL operations

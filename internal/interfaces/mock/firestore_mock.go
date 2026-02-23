@@ -28,7 +28,7 @@ var _ interfaces.FirestoreClient = &FirestoreClientMock{}
 //			CreateCollectionFunc: func(ctx context.Context, collectionID string) error {
 //				panic("mock out the CreateCollection method")
 //			},
-//			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error) {
+//			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error) {
 //				panic("mock out the CreateIndex method")
 //			},
 //			DeleteIndexFunc: func(ctx context.Context, indexName string) (interface{}, error) {
@@ -42,6 +42,9 @@ var _ interfaces.FirestoreClient = &FirestoreClientMock{}
 //			},
 //			FindTTLFieldFunc: func(ctx context.Context, collectionID string) (string, error) {
 //				panic("mock out the FindTTLField method")
+//			},
+//			GetIndexFunc: func(ctx context.Context, indexName string) (*interfaces.FirestoreIndex, error) {
+//				panic("mock out the GetIndex method")
 //			},
 //			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 //				panic("mock out the GetTTLPolicy method")
@@ -72,7 +75,7 @@ type FirestoreClientMock struct {
 	CreateCollectionFunc func(ctx context.Context, collectionID string) error
 
 	// CreateIndexFunc mocks the CreateIndex method.
-	CreateIndexFunc func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error)
+	CreateIndexFunc func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error)
 
 	// DeleteIndexFunc mocks the DeleteIndex method.
 	DeleteIndexFunc func(ctx context.Context, indexName string) (interface{}, error)
@@ -85,6 +88,9 @@ type FirestoreClientMock struct {
 
 	// FindTTLFieldFunc mocks the FindTTLField method.
 	FindTTLFieldFunc func(ctx context.Context, collectionID string) (string, error)
+
+	// GetIndexFunc mocks the GetIndex method.
+	GetIndexFunc func(ctx context.Context, indexName string) (*interfaces.FirestoreIndex, error)
 
 	// GetTTLPolicyFunc mocks the GetTTLPolicy method.
 	GetTTLPolicyFunc func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error)
@@ -156,6 +162,13 @@ type FirestoreClientMock struct {
 			// CollectionID is the collectionID argument value.
 			CollectionID string
 		}
+		// GetIndex holds details about calls to the GetIndex method.
+		GetIndex []struct {
+			// Ctx is the ctx argument value.
+			Ctx context.Context
+			// IndexName is the indexName argument value.
+			IndexName string
+		}
 		// GetTTLPolicy holds details about calls to the GetTTLPolicy method.
 		GetTTLPolicy []struct {
 			// Ctx is the ctx argument value.
@@ -193,6 +206,7 @@ type FirestoreClientMock struct {
 	lockDisableTTLPolicy sync.RWMutex
 	lockEnableTTLPolicy  sync.RWMutex
 	lockFindTTLField     sync.RWMutex
+	lockGetIndex         sync.RWMutex
 	lockGetTTLPolicy     sync.RWMutex
 	lockListCollections  sync.RWMutex
 	lockListIndexes      sync.RWMutex
@@ -299,7 +313,7 @@ func (mock *FirestoreClientMock) CreateCollectionCalls() []struct {
 }
 
 // CreateIndex calls CreateIndexFunc.
-func (mock *FirestoreClientMock) CreateIndex(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error) {
+func (mock *FirestoreClientMock) CreateIndex(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error) {
 	if mock.CreateIndexFunc == nil {
 		panic("FirestoreClientMock.CreateIndexFunc: method is nil but FirestoreClient.CreateIndex was just called")
 	}
@@ -483,6 +497,42 @@ func (mock *FirestoreClientMock) FindTTLFieldCalls() []struct {
 	mock.lockFindTTLField.RLock()
 	calls = mock.calls.FindTTLField
 	mock.lockFindTTLField.RUnlock()
+	return calls
+}
+
+// GetIndex calls GetIndexFunc.
+func (mock *FirestoreClientMock) GetIndex(ctx context.Context, indexName string) (*interfaces.FirestoreIndex, error) {
+	if mock.GetIndexFunc == nil {
+		panic("FirestoreClientMock.GetIndexFunc: method is nil but FirestoreClient.GetIndex was just called")
+	}
+	callInfo := struct {
+		Ctx       context.Context
+		IndexName string
+	}{
+		Ctx:       ctx,
+		IndexName: indexName,
+	}
+	mock.lockGetIndex.Lock()
+	mock.calls.GetIndex = append(mock.calls.GetIndex, callInfo)
+	mock.lockGetIndex.Unlock()
+	return mock.GetIndexFunc(ctx, indexName)
+}
+
+// GetIndexCalls gets all the calls that were made to GetIndex.
+// Check the length with:
+//
+//	len(mockedFirestoreClient.GetIndexCalls())
+func (mock *FirestoreClientMock) GetIndexCalls() []struct {
+	Ctx       context.Context
+	IndexName string
+} {
+	var calls []struct {
+		Ctx       context.Context
+		IndexName string
+	}
+	mock.lockGetIndex.RLock()
+	calls = mock.calls.GetIndex
+	mock.lockGetIndex.RUnlock()
 	return calls
 }
 

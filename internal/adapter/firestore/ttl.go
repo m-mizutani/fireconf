@@ -125,15 +125,11 @@ func (c *Client) disableIndexOnTTLField(ctx context.Context, collectionID string
 		},
 	}
 
-	op, err := c.admin.UpdateField(ctx, req)
+	// Fire-and-forget: disabling the single-field index is a hotspot prevention
+	// optimization. We do not need to wait for this operation before enabling TTL.
+	_, err := c.admin.UpdateField(ctx, req)
 	if err != nil {
 		return fmt.Errorf("failed to update field index config: %w", err)
-	}
-
-	// Wait for the operation to complete
-	_, err = op.Wait(ctx)
-	if err != nil {
-		return fmt.Errorf("field index update failed: %w", err)
 	}
 
 	return nil
