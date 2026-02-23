@@ -320,16 +320,16 @@ func TestE2E_VectorIndexNameFieldBehavior(t *testing.T) {
 		gt.NoError(t, err)
 		gt.Equal(t, len(importedConfig.Collections), 1)
 
+		expectedIndex := config.Collections[0].Indexes[0]
 		found := false
-		for _, idx := range importedConfig.Collections[0].Indexes {
-			for _, f := range idx.Fields {
-				if f.VectorConfig != nil && f.VectorConfig.Dimension == 768 {
-					found = true
-				}
+		for _, importedIndex := range importedConfig.Collections[0].Indexes {
+			if indexesMatch(expectedIndex, importedIndex) {
+				found = true
+				break
 			}
 		}
 		if !found {
-			t.Error("Expected vector index with dimension 768 to be found after sync")
+			t.Errorf("Expected to find index %+v, but it was not present in imported config", expectedIndex)
 		}
 	})
 }
