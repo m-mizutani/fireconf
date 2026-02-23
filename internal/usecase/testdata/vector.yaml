@@ -4,8 +4,6 @@ collections:
   - fields:
     - name: title
       order: ASCENDING
-    - name: __name__
-      order: ASCENDING
     - name: embedding
       order: ASCENDING
       vector_config:
@@ -16,8 +14,6 @@ collections:
       order: ASCENDING
     - name: createdAt
       order: DESCENDING
-    - name: __name__
-      order: ASCENDING
     - name: searchVector
       order: ASCENDING
       vector_config:

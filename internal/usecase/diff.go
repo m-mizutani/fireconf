@@ -63,18 +63,36 @@ func DiffTTL(desired *model.TTL, existing *interfaces.FirestoreTTL) (needsUpdate
 	return false, ""
 }
 
-// getIndexKey generates a unique key for an index based on its fields and scope
-// Field order is significant for composite indexes, so we preserve it
+// getIndexKey generates a unique key for an index based on its fields and scope.
+// Field order is significant for composite indexes, so we preserve it.
+// __name__ is excluded from the key because Firestore automatically appends it
+// to non-vector indexes; it must not affect index identity for comparison purposes.
+// QueryScope is normalized to COLLECTION for vector indexes because Firestore may
+// return COLLECTION_GROUP even when the index was created with COLLECTION scope.
 func getIndexKey(idx interfaces.FirestoreIndex) string {
 	var parts []string
 
-	// Add query scope
-	parts = append(parts, idx.QueryScope)
+	// Normalize QueryScope for vector indexes: Firestore may return COLLECTION_GROUP
+	// for vector indexes regardless of the scope used at creation time. Since vector
+	// indexes only support COLLECTION scope, normalize to avoid spurious recreations.
+	queryScope := idx.QueryScope
+	for _, field := range idx.Fields {
+		if field.VectorConfig != nil {
+			queryScope = "COLLECTION"
+			break
+		}
+	}
+	parts = append(parts, queryScope)
 
 	// Preserve field order - it's significant for composite indexes
 	// An index on (fieldA, fieldB) is different from (fieldB, fieldA)
 	fieldKeys := make([]string, 0, len(idx.Fields))
 	for _, field := range idx.Fields {
+		// Skip __name__: Firestore appends it automatically to non-vector indexes,
+		// so it must not be part of the comparison key.
+		if field.FieldPath == "__name__" {
+			continue
+		}
 		var fieldKey string
 		if field.Order != "" {
 			fieldKey = fmt.Sprintf("%s:%s", field.FieldPath, field.Order)

@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"cloud.google.com/go/firestore"
 	apiv1 "cloud.google.com/go/firestore/apiv1/admin"
 	adminpb "cloud.google.com/go/firestore/apiv1/admin/adminpb"
-	"github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 )
@@ -160,62 +158,20 @@ func (c *Client) getFieldPath(collectionID, fieldName string) string {
 		c.projectID, c.databaseID, collectionID, fieldName)
 }
 
-// WaitForOperation waits for a long-running operation to complete
-// Uses custom polling with exponential backoff (1s -> 2s -> 4s -> 8s -> 10s max)
+// WaitForOperation waits for a long-running operation to complete.
+// Uses the SDK's built-in Wait method which handles polling and backoff internally.
 func (c *Client) WaitForOperation(ctx context.Context, operation interface{}) error {
-	// Custom backoff settings: start at 1s, max 10s
-	bo := gax.Backoff{
-		Initial:    1 * time.Second,
-		Max:        10 * time.Second,
-		Multiplier: 2.0,
-	}
-
 	switch op := operation.(type) {
 	case *apiv1.CreateIndexOperation:
-		// Poll with custom backoff until done
-		for !op.Done() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(bo.Pause()):
-				// Poll to check status
-				// According to docs:
-				// - If Poll fails, error is returned and op is unmodified (retry)
-				// - If Poll succeeds but operation failed, error is returned and op.Done becomes true (exit loop and return error)
-				// - If Poll succeeds and operation is in progress, both response and error are nil (continue loop)
-				// - If Poll succeeds and operation completed successfully, op.Done is true and response is returned (exit loop)
-				_, err := op.Poll(ctx)
-				if err != nil {
-					// If operation is now done, it means the operation failed
-					if op.Done() {
-						return fmt.Errorf("index creation operation failed: %w", err)
-					}
-					// Otherwise, it's a transient error (network, etc), continue polling
-				}
-			}
+		if _, err := op.Wait(ctx); err != nil {
+			return fmt.Errorf("index creation operation failed: %w", err)
 		}
-		// Operation completed successfully
 		return nil
 
 	case *apiv1.UpdateFieldOperation:
-		// Poll with custom backoff until done
-		for !op.Done() {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(bo.Pause()):
-				// Poll to check status
-				_, err := op.Poll(ctx)
-				if err != nil {
-					// If operation is now done, it means the operation failed
-					if op.Done() {
-						return fmt.Errorf("field update operation failed: %w", err)
-					}
-					// Otherwise, it's a transient error (network, etc), continue polling
-				}
-			}
+		if _, err := op.Wait(ctx); err != nil {
+			return fmt.Errorf("field update operation failed: %w", err)
 		}
-		// Operation completed successfully
 		return nil
 
 	default:

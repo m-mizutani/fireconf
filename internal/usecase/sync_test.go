@@ -18,46 +18,37 @@ func TestSync_Execute(t *testing.T) {
 	logger := slog.Default()
 
 	t.Run("Normal: sync indexes successfully", func(t *testing.T) {
-		// Setup mock
-		listCallCount := 0
+		const idxName = "projects/test/databases/default/collectionGroups/users/indexes/idx1"
+		getCallCount := 0
 		mockClient := &mock.FirestoreClientMock{
 			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
 				return true, nil
 			},
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
-				listCallCount++
-				if listCallCount == 1 {
-					// First call from syncIndexes: no existing indexes
-					return []interfaces.FirestoreIndex{}, nil
-				}
-				// Subsequent calls from waitForIndexesReady: return READY index
-				return []interfaces.FirestoreIndex{
-					{
-						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
-						Fields: []interfaces.FirestoreIndexField{
-							{FieldPath: "email", Order: "ASCENDING"},
-							{FieldPath: "createdAt", Order: "DESCENDING"},
-						},
-						QueryScope: "COLLECTION",
-						State:      "READY",
-					},
-				}, nil
+				// syncIndexes: no existing indexes
+				return []interfaces.FirestoreIndex{}, nil
 			},
-			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error) {
-				return nil, nil // No operation object in dry run
+			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error) {
+				return idxName, nil // Return index resource name
+			},
+			GetIndexFunc: func(ctx context.Context, indexName string) (*interfaces.FirestoreIndex, error) {
+				getCallCount++
+				state := "CREATING"
+				if getCallCount >= 2 {
+					state = "READY"
+				}
+				return &interfaces.FirestoreIndex{Name: indexName, State: state}, nil
 			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
-				return nil, nil // No existing TTL
+				return nil, nil
 			},
 			DisableTTLPolicyFunc: func(ctx context.Context, collectionID string) (interface{}, error) {
 				return nil, nil
 			},
 		}
 
-		// Create sync use case
 		sync := usecase.NewSync(mockClient, logger)
 
-		// Create test config
 		config := &model.Config{
 			Collections: []model.Collection{
 				{
@@ -75,16 +66,14 @@ func TestSync_Execute(t *testing.T) {
 			},
 		}
 
-		// Execute
 		err := sync.Execute(ctx, config)
 		gt.NoError(t, err)
 
-		// Verify calls
-		// ListIndexes is called once by syncIndexes and once more by waitForIndexesReady
 		gt.Equal(t, len(mockClient.CollectionExistsCalls()), 1)
-		gt.True(t, len(mockClient.ListIndexesCalls()) >= 2)
+		gt.Equal(t, len(mockClient.ListIndexesCalls()), 1) // Only from syncIndexes
 		gt.Equal(t, len(mockClient.CreateIndexCalls()), 1)
 		gt.Equal(t, mockClient.CreateIndexCalls()[0].CollectionID, "users")
+		gt.True(t, len(mockClient.GetIndexCalls()) >= 2) // waitForIndexesReady polling
 	})
 
 	t.Run("Normal: create collection if not exists", func(t *testing.T) {
@@ -277,6 +266,9 @@ func TestSync_Execute(t *testing.T) {
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
 				return nil, fmt.Errorf("firestore error: permission denied")
 			},
+			DisableTTLPolicyFunc: func(ctx context.Context, collectionID string) (interface{}, error) {
+				return nil, nil
+			},
 		}
 
 		sync := usecase.NewSync(mockClient, logger)
@@ -302,8 +294,8 @@ func TestSync_Execute(t *testing.T) {
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
 				return []interfaces.FirestoreIndex{}, nil
 			},
-			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error) {
-				return nil, fmt.Errorf("invalid index configuration")
+			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error) {
+				return "", fmt.Errorf("invalid index configuration")
 			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil
@@ -369,20 +361,14 @@ func TestSync_Execute(t *testing.T) {
 	})
 
 	t.Run("Normal: wait for externally CREATING index to become READY", func(t *testing.T) {
-		// Main bug scenario: an external process created an index that is in CREATING state.
-		// Migrate should detect it and wait until it becomes READY without calling CreateIndex.
-		callCount := 0
+		// An external process created an index that is already in CREATING state.
+		// DiffIndexes detects it as existing, so CreateIndex is NOT called.
+		// waitForIndexesReady gets no names to wait for, and sync completes immediately.
 		mockClient := &mock.FirestoreClientMock{
 			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
 				return true, nil
 			},
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
-				callCount++
-				state := "CREATING"
-				if callCount >= 2 {
-					// Second call (from waitForIndexesReady polling): return READY
-					state = "READY"
-				}
 				return []interfaces.FirestoreIndex{
 					{
 						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
@@ -391,7 +377,7 @@ func TestSync_Execute(t *testing.T) {
 							{FieldPath: "createdAt", Order: "DESCENDING"},
 						},
 						QueryScope: "COLLECTION",
-						State:      state,
+						State:      "CREATING",
 					},
 				}, nil
 			},
@@ -427,8 +413,8 @@ func TestSync_Execute(t *testing.T) {
 
 		// CreateIndex must NOT be called because the index already exists (CREATING state)
 		gt.Equal(t, len(mockClient.CreateIndexCalls()), 0)
-		// ListIndexes called at least twice: once in syncIndexes, once in waitForIndexesReady
-		gt.True(t, len(mockClient.ListIndexesCalls()) >= 2)
+		// ListIndexes called exactly once (only from syncIndexes, not from waitForIndexesReady)
+		gt.Equal(t, len(mockClient.ListIndexesCalls()), 1)
 	})
 
 	t.Run("Normal: index starts READY, no extra polling needed", func(t *testing.T) {
@@ -481,27 +467,25 @@ func TestSync_Execute(t *testing.T) {
 	})
 
 	t.Run("Error: index enters ERROR state during wait", func(t *testing.T) {
-		callCount := 0
+		const idxName = "projects/test/databases/default/collectionGroups/users/indexes/idx1"
+		getCallCount := 0
 		mockClient := &mock.FirestoreClientMock{
 			CollectionExistsFunc: func(ctx context.Context, collectionID string) (bool, error) {
 				return true, nil
 			},
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
-				callCount++
+				return []interfaces.FirestoreIndex{}, nil // no existing indexes
+			},
+			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error) {
+				return idxName, nil
+			},
+			GetIndexFunc: func(ctx context.Context, indexName string) (*interfaces.FirestoreIndex, error) {
+				getCallCount++
 				state := "CREATING"
-				if callCount >= 2 {
+				if getCallCount >= 2 {
 					state = "ERROR"
 				}
-				return []interfaces.FirestoreIndex{
-					{
-						Name: "projects/test/databases/default/collectionGroups/users/indexes/idx1",
-						Fields: []interfaces.FirestoreIndexField{
-							{FieldPath: "email", Order: "ASCENDING"},
-						},
-						QueryScope: "COLLECTION",
-						State:      state,
-					},
-				}, nil
+				return &interfaces.FirestoreIndex{Name: indexName, State: state}, nil
 			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil
@@ -593,8 +577,8 @@ func TestSync_Execute(t *testing.T) {
 			ListIndexesFunc: func(ctx context.Context, collectionID string) ([]interfaces.FirestoreIndex, error) {
 				return []interfaces.FirestoreIndex{}, nil
 			},
-			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (interface{}, error) {
-				return nil, nil
+			CreateIndexFunc: func(ctx context.Context, collectionID string, index interfaces.FirestoreIndex) (string, error) {
+				return "", nil // async mode: name not used
 			},
 			GetTTLPolicyFunc: func(ctx context.Context, collectionID string, fieldName string) (*interfaces.FirestoreTTL, error) {
 				return nil, nil
