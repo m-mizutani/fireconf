@@ -4,6 +4,5 @@ package usecase
 var (
 	// Diff related exports
 	GetIndexKey                  = getIndexKey
-	ConvertModelToFirestoreIndex = convertModelToFirestoreIndex
 	ConvertFirestoreToModelIndex = convertFirestoreToModelIndex
 )
