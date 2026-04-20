@@ -16,7 +16,7 @@ func DiffIndexes(desired []model.Index, existing []interfaces.FirestoreIndex) (t
 
 	// Build desired map
 	for _, idx := range desired {
-		key := getIndexKey(convertModelToFirestoreIndex(idx))
+		key := getIndexKey(ConvertModelToFirestoreIndex(idx))
 		desiredMap[key] = idx
 	}
 
@@ -33,7 +33,7 @@ func DiffIndexes(desired []model.Index, existing []interfaces.FirestoreIndex) (t
 	// Find indexes to create
 	for key, idx := range desiredMap {
 		if _, found := existingMap[key]; !found {
-			toCreate = append(toCreate, convertModelToFirestoreIndex(idx))
+			toCreate = append(toCreate, ConvertModelToFirestoreIndex(idx))
 		}
 	}
 
@@ -110,8 +110,10 @@ func getIndexKey(idx interfaces.FirestoreIndex) string {
 	return strings.Join(parts, "|")
 }
 
-// convertModelToFirestoreIndex converts domain model to Firestore interface
-func convertModelToFirestoreIndex(idx model.Index) interfaces.FirestoreIndex {
+// ConvertModelToFirestoreIndex converts a domain model index into the Firestore
+// interface representation. Exported so that Client.DiffConfigs (root package)
+// can share the same semantics as the Migrate path without duplicating logic.
+func ConvertModelToFirestoreIndex(idx model.Index) interfaces.FirestoreIndex {
 	firestoreIndex := interfaces.FirestoreIndex{
 		QueryScope: idx.GetQueryScope(),
 		Fields:     make([]interfaces.FirestoreIndexField, 0, len(idx.Fields)),

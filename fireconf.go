@@ -106,7 +106,13 @@ func (c *Client) Import(ctx context.Context, collections ...string) (*Config, er
 	return config, nil
 }
 
-// DiffConfigs compares the current configuration against the desired configuration set in New
+// DiffConfigs compares the current configuration against the desired
+// configuration set in New. Indexes are matched individually using the same
+// key semantics as the Migrate path (internal DiffIndexes): __name__ is
+// ignored because Firestore auto-appends it, and vector indexes have their
+// QueryScope normalized to COLLECTION because Firestore may report
+// COLLECTION_GROUP even when created with COLLECTION scope. Field order is
+// preserved since it is significant for composite indexes.
 func (c *Client) DiffConfigs(current *Config) (*DiffResult, error) {
 	if current == nil {
 		return nil, &DiffError{Details: []string{"current config is nil"}}
@@ -122,75 +128,114 @@ func (c *Client) DiffConfigs(current *Config) (*DiffResult, error) {
 		Collections: make([]CollectionDiff, 0),
 	}
 
-	// Create maps for easier comparison
 	currentMap := make(map[string]model.Collection)
 	desiredMap := make(map[string]model.Collection)
 
 	for _, col := range currentInternal.Collections {
 		currentMap[col.Name] = col
 	}
-
 	for _, col := range desiredInternal.Collections {
 		desiredMap[col.Name] = col
 	}
 
-	// Check for collections to add or modify
 	for name, desiredCol := range desiredMap {
 		currentCol, exists := currentMap[name]
 
 		if !exists {
-			// Collection to add
+			// New collection: every desired index is to be added.
+			addedIndexes := convertIndexesToPublic(desiredCol.Indexes)
 			result.Collections = append(result.Collections, CollectionDiff{
-				Name:    name,
-				Action:  ActionAdd,
-				Indexes: convertIndexesToPublic(desiredCol.Indexes),
-				TTL:     convertTTLToPublic(desiredCol.TTL),
+				Name:         name,
+				Action:       ActionAdd,
+				Indexes:      addedIndexes,
+				IndexesToAdd: addedIndexes,
+				TTL:          convertTTLToPublic(desiredCol.TTL),
 			})
-		} else {
-			// Compare indexes and TTL
-			diff := CollectionDiff{
-				Name:   name,
-				Action: ActionModify,
-			}
+			continue
+		}
 
-			// Compare indexes - use simple comparison for now
-			// This is a simplified diff that compares index counts
-			indexChanges := len(desiredCol.Indexes) != len(currentCol.Indexes)
-			if indexChanges {
-				diff.IndexesToAdd = convertIndexesToPublic(desiredCol.Indexes)
-				diff.IndexesToDelete = convertIndexesToPublic(currentCol.Indexes)
-			}
+		diff := CollectionDiff{
+			Name:   name,
+			Action: ActionModify,
+		}
 
-			// Compare TTL
-			if (desiredCol.TTL == nil) != (currentCol.TTL == nil) ||
-				(desiredCol.TTL != nil && currentCol.TTL != nil && desiredCol.TTL.Field != currentCol.TTL.Field) {
-				diff.TTL = convertTTLToPublic(desiredCol.TTL)
-				diff.TTLAction = ActionModify
-				if desiredCol.TTL == nil {
-					diff.TTLAction = ActionDelete
-				} else if currentCol.TTL == nil {
-					diff.TTLAction = ActionAdd
-				}
-			}
+		// Per-index diff using the same semantics as the Migrate path.
+		existingAsFirestore := make([]interfaces.FirestoreIndex, 0, len(currentCol.Indexes))
+		for _, idx := range currentCol.Indexes {
+			existingAsFirestore = append(existingAsFirestore, usecase.ConvertModelToFirestoreIndex(idx))
+		}
+		toCreate, toDelete := usecase.DiffIndexes(desiredCol.Indexes, existingAsFirestore)
 
-			// Only add to result if there are changes
-			if indexChanges || diff.TTLAction != "" {
-				result.Collections = append(result.Collections, diff)
+		if len(toCreate) > 0 {
+			diff.IndexesToAdd = firestoreIndexesToPublic(toCreate)
+		}
+		if len(toDelete) > 0 {
+			diff.IndexesToDelete = firestoreIndexesToPublic(toDelete)
+		}
+
+		// Compare TTL
+		if (desiredCol.TTL == nil) != (currentCol.TTL == nil) ||
+			(desiredCol.TTL != nil && currentCol.TTL != nil && desiredCol.TTL.Field != currentCol.TTL.Field) {
+			diff.TTL = convertTTLToPublic(desiredCol.TTL)
+			diff.TTLAction = ActionModify
+			if desiredCol.TTL == nil {
+				diff.TTLAction = ActionDelete
+			} else if currentCol.TTL == nil {
+				diff.TTLAction = ActionAdd
 			}
+		}
+
+		// Only add to result if there are changes
+		if len(diff.IndexesToAdd) > 0 || len(diff.IndexesToDelete) > 0 || diff.TTLAction != "" {
+			result.Collections = append(result.Collections, diff)
 		}
 	}
 
 	// Check for collections to delete
-	for name := range currentMap {
+	for name, currentCol := range currentMap {
 		if _, exists := desiredMap[name]; !exists {
 			result.Collections = append(result.Collections, CollectionDiff{
-				Name:   name,
-				Action: ActionDelete,
+				Name:            name,
+				Action:          ActionDelete,
+				IndexesToDelete: convertIndexesToPublic(currentCol.Indexes),
 			})
 		}
 	}
 
 	return result, nil
+}
+
+// firestoreIndexesToPublic converts internal FirestoreIndex values to the
+// public Index type. Needed because convertIndexesToPublic operates on
+// []model.Index, not []interfaces.FirestoreIndex.
+func firestoreIndexesToPublic(indexes []interfaces.FirestoreIndex) []Index {
+	out := make([]Index, 0, len(indexes))
+	for _, idx := range indexes {
+		out = append(out, Index{
+			QueryScope: QueryScope(idx.QueryScope),
+			Fields:     firestoreFieldsToPublic(idx.Fields),
+		})
+	}
+	return out
+}
+
+// firestoreFieldsToPublic mirrors the precedence used in
+// usecase.ConvertModelToFirestoreIndex: VectorConfig > ArrayConfig > Order.
+func firestoreFieldsToPublic(fields []interfaces.FirestoreIndexField) []IndexField {
+	out := make([]IndexField, 0, len(fields))
+	for _, f := range fields {
+		field := IndexField{Path: f.FieldPath}
+		switch {
+		case f.VectorConfig != nil:
+			field.Vector = &VectorConfig{Dimension: f.VectorConfig.Dimension}
+		case f.ArrayConfig != "":
+			field.Array = ArrayConfig(f.ArrayConfig)
+		case f.Order != "":
+			field.Order = Order(f.Order)
+		}
+		out = append(out, field)
+	}
+	return out
 }
 
 // DiffResult represents the difference between configurations

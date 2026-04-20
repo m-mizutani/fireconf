@@ -137,7 +137,7 @@ func (s *Sync) syncIndexes(ctx context.Context, collection model.Collection) err
 		for i, idx := range collection.Indexes {
 			s.logger.Debug("  Desired index",
 				slog.Int("index", i),
-				slog.Any("fields", convertModelToFirestoreIndex(idx).Fields),
+				slog.Any("fields", ConvertModelToFirestoreIndex(idx).Fields),
 				slog.String("queryScope", idx.QueryScope))
 		}
 
