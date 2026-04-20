@@ -219,19 +219,26 @@ func firestoreIndexesToPublic(indexes []interfaces.FirestoreIndex) []Index {
 	return out
 }
 
-// firestoreFieldsToPublic mirrors the precedence used in
-// usecase.ConvertModelToFirestoreIndex: VectorConfig > ArrayConfig > Order.
+// firestoreFieldsToPublic mirrors convertFieldsToPublic so that IndexField
+// values in IndexesToAdd / IndexesToDelete are shaped the same regardless of
+// whether the collection took the ADD path (model-based conversion) or the
+// MODIFY path (Firestore-based conversion). In particular, Order and Array
+// are always carried through, and vector fields default Order to ASCENDING
+// to match the convenience convention in internal/usecase/diff.go's
+// convertFirestoreToModelIndex.
 func firestoreFieldsToPublic(fields []interfaces.FirestoreIndexField) []IndexField {
 	out := make([]IndexField, 0, len(fields))
 	for _, f := range fields {
-		field := IndexField{Path: f.FieldPath}
-		switch {
-		case f.VectorConfig != nil:
+		field := IndexField{
+			Path:  f.FieldPath,
+			Order: Order(f.Order),
+			Array: ArrayConfig(f.ArrayConfig),
+		}
+		if f.VectorConfig != nil {
 			field.Vector = &VectorConfig{Dimension: f.VectorConfig.Dimension}
-		case f.ArrayConfig != "":
-			field.Array = ArrayConfig(f.ArrayConfig)
-		case f.Order != "":
-			field.Order = Order(f.Order)
+			if field.Order == "" {
+				field.Order = OrderAscending
+			}
 		}
 		out = append(out, field)
 	}
